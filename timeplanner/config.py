@@ -45,6 +45,8 @@ class Config:
 
     # planner 记忆缓存目录（仓库内，gitignore，绝不碰库）
     cache_dir: Path = field(default_factory=lambda: REPO_ROOT / ".cache")
+    # 本地 timeline 数据（Plan/Actual，gitignore，是你的真实日程）
+    data_dir: Path = field(default_factory=lambda: REPO_ROOT / "data")
 
     def vault_ok(self) -> bool:
         return self.vault.is_dir()

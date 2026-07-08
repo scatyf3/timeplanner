@@ -18,3 +18,6 @@ state.json
 
 # planner 记忆缓存（思考 + 候选原则，可随时删）
 .cache/
+
+# 本地 timeline 数据（Plan/Actual，你的真实日程）
+data/

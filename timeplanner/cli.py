@@ -1,8 +1,10 @@
 """Phase 0 入口：终端对话。
 
-    timeplanner summary [--date YYYY-MM-DD]   # M1：四个只读信号，不碰 agent
+    timeplanner summary [--date YYYY-MM-DD]   # M1：只读信号 + 本地 timeline
     timeplanner doctor                        # 环境自检（M0）
-    timeplanner plan    [--date ...]          # 出今日 plan 草案（需 agent SDK）
+    timeplanner plan    [--date ...]          # 出今日 plan 草案并 stage（需 agent SDK）
+    timeplanner confirm [--date] [--yes]      # 辅助式确认：把提案写进本地 Plan timeline
+    timeplanner log START END BUCKET SUMMARY  # 录一条 Actual 事件（②自报层）
     timeplanner reflect [--date ...]          # 晚间复盘（需 agent SDK）
 """
 
@@ -14,7 +16,7 @@ import datetime as dt
 import sys
 
 from .config import config
-from .core import activitywatch, gcal, memory, notes, weather
+from .core import activitywatch, gcal, memory, notes, timeline, weather
 
 
 def _date(s: str | None) -> dt.date:
@@ -55,12 +57,15 @@ def cmd_doctor(_args) -> int:
 
 
 def cmd_summary(args) -> int:
-    """M1：四个只读模块各输出 summary。零 agent、零写入。"""
+    """M1：只读模块 summary + 本地 timeline（Plan/Actual）。零 agent、零写入。"""
     d = _date(args.date)
     print(notes.summary(d))
     print("\n" + activitywatch.summary(d))
     print("\n" + weather.summary(d))
-    print("\n" + gcal.summary(d))
+    print("\n" + timeline.summary(d, timeline.PLAN))
+    print("\n" + timeline.summary(d, timeline.ACTUAL))
+    if gcal.is_configured():
+        print("\n" + gcal.summary(d))
     return 0
 
 
@@ -68,9 +73,9 @@ def cmd_plan(args) -> int:
     from . import agent
     d = _date(args.date)
     mem = memory.context_block()
-    prompt = (f"今天是 {d:%Y-%m-%d}。请先用工具读 notes/AW/天气/现有日历，"
+    prompt = (f"今天是 {d:%Y-%m-%d}。请先用工具读 notes/AW/天气/现有 timeline，"
               "然后给我一份今日 plan 草案（timeline + 专注 block 数 + 理由），"
-              "最后问我是否确认写入。"
+              "并**调用 stage_plan** 把草案 stage 起来，提示我跑 `timeplanner confirm` 确认。"
               "\n\n**结束前必须调用 remember_thought**，一句话记下今天的关键取舍/判断"
               "（即使还在等我确认），好让下次开工有连续性。")
     if mem:
@@ -79,12 +84,27 @@ def cmd_plan(args) -> int:
     return 0
 
 
+def cmd_confirm(args) -> int:
+    """辅助式闸门：把当天 stage 的 plan 提案写进本地 Plan timeline。默认 dry-run，--yes 落地。"""
+    d = _date(args.date)
+    print(timeline.confirm(d, dry_run=not args.yes))
+    return 0
+
+
+def cmd_log(args) -> int:
+    """录一条 Actual 事件（②自报层）。"""
+    d = _date(args.date)
+    e = timeline.log_actual(d, args.start, args.end, args.bucket, " ".join(args.summary))
+    print(f"📝 已录入 Actual：{e.line()}")
+    return 0
+
+
 def cmd_reflect(args) -> int:
     from . import agent
     d = _date(args.date)
     mem = memory.context_block()
-    prompt = (f"今天是 {d:%Y-%m-%d}，晚间复盘。请对比 ①Plan(日历) ②Actual ③Observed(AW)，"
-              "走「收工 4 问」记分板，给我一行 takeaway 建议。"
+    prompt = (f"今天是 {d:%Y-%m-%d}，晚间复盘。请用 timeline_read 读 ①Plan ②Actual，"
+              "配合 ③Observed(AW)，走「收工 4 问」记分板，给我一行 takeaway 建议。"
               "\n\n**结束前必须调用 remember_thought** 记下今天的 takeaway/观察；"
               "若这条经验能推广成一条可复用的时间管理原则，再调 remember_principle。")
     if mem:
@@ -116,6 +136,17 @@ def main(argv: list[str] | None = None) -> int:
     mp = sub.add_parser("memory", help="planner 记忆缓存（思考 + 候选原则）")
     mp.add_argument("--clear", action="store_true", help="清空记忆")
 
+    cf = sub.add_parser("confirm", help="确认写入本地 Plan timeline")
+    cf.add_argument("--date", help="YYYY-MM-DD，默认今天")
+    cf.add_argument("--yes", action="store_true", help="真写（默认 dry-run 只预览）")
+
+    lg = sub.add_parser("log", help="录一条 Actual 事件")
+    lg.add_argument("start", help="开始 HH:MM")
+    lg.add_argument("end", help="结束 HH:MM")
+    lg.add_argument("bucket", choices=["main", "side", "life", "fit"], help="工作块")
+    lg.add_argument("summary", nargs="+", help="事件描述")
+    lg.add_argument("--date", help="YYYY-MM-DD，默认今天")
+
     args = p.parse_args(argv)
     if not args.cmd:
         p.print_help()
@@ -127,6 +158,8 @@ def main(argv: list[str] | None = None) -> int:
         "plan": cmd_plan,
         "reflect": cmd_reflect,
         "memory": cmd_memory,
+        "confirm": cmd_confirm,
+        "log": cmd_log,
     }[args.cmd](args)
 
 

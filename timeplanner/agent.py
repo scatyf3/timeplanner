@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import datetime as dt
 
+import json
+
 from .config import config
-from .core import activitywatch, gcal, memory, notes, weather
+from .core import activitywatch, memory, notes, timeline, weather
 
 
 def load_principles() -> str:
@@ -26,7 +28,7 @@ def gather_context(date: dt.date | None = None) -> str:
         notes.summary(date),
         activitywatch.summary(date),
         weather.summary(date),
-        gcal.summary(date),
+        timeline.summary(date, timeline.PLAN),
     ]
     return "\n\n".join(parts)
 
@@ -45,9 +47,10 @@ SYSTEM_PROMPT = """你是 TimePlanner，一个**辅助式**时间规划 agent。
 4. 每块到点物理硬停；专注 block 默认 90min。
 5. 天气不好时把「生活/身体」那格挪室内。
 
-plan 任务：读 notes/AW/天气/现有日历 → 产出一天的 timeline 草案（几点做哪块、几个专注 block），\
-用清晰列表呈现，标注理由，最后问人是否确认写入。
-reflect 任务：对比 ①Plan ②Actual ③Observed，走「收工 4 问」记分板，给一行 takeaway 建议。
+plan 任务：读 notes/AW/天气/现有 timeline → 产出一天的 timeline 草案（几点做哪块、几个专注 block），\
+用清晰列表呈现并标注理由；然后**调用 stage_plan** 把这份草案 stage 起来（辅助式：这只是暂存，\
+人跑 `timeplanner confirm` 才真写进本地 Plan timeline），最后提示人去 confirm。
+reflect 任务：对比 ①Plan ②Actual（timeline_read）③Observed（AW），走「收工 4 问」记分板，给一行 takeaway 建议。
 
 记忆（自进化）：你有两个记忆工具——
 - remember_thought：把这次规划里**重要的判断/取舍/观察**记下来（如「今天把 side 压到一格因为 main 有 deadline」），下次开工会读回，给你连续性。
@@ -75,10 +78,27 @@ def build_options():
         d = _parse_date(args.get("date"))
         return {"content": [{"type": "text", "text": weather.summary(d)}]}
 
-    @tool("gcal_read", "读 Plan 日历当天事件，区分 planner 块与外部固定约束", {"date": str})
-    async def gcal_read(args):
+    @tool("timeline_read", "读本地 timeline 当天的 ①Plan 与 ②Actual 事件", {"date": str})
+    async def timeline_read(args):
         d = _parse_date(args.get("date"))
-        return {"content": [{"type": "text", "text": gcal.summary(d)}]}
+        text = timeline.summary(d, timeline.PLAN) + "\n\n" + timeline.summary(d, timeline.ACTUAL)
+        return {"content": [{"type": "text", "text": text}]}
+
+    @tool("stage_plan",
+          "把今日 timeline 草案 stage 到待确认区（人跑 `timeplanner confirm` 才真写）。"
+          "events_json 是 JSON 数组，每项 {start:'HH:MM', end:'HH:MM', bucket:'main|side|life|fit', summary:'...'}",
+          {"date": str, "events_json": str})
+    async def stage_plan(args):
+        d = _parse_date(args.get("date"))
+        try:
+            spec = json.loads(args["events_json"])
+        except (json.JSONDecodeError, KeyError) as e:
+            return {"content": [{"type": "text", "text": f"⚠️ events_json 解析失败：{e}"}]}
+        evs = timeline.stage_plan(d, spec)
+        body = "\n".join(f"  {e.line()}" for e in evs)
+        return {"content": [{"type": "text",
+                "text": f"🗂️ 已 stage {len(evs)} 个事件，等人确认：\n{body}\n"
+                        f"让 ta 跑 `timeplanner confirm` 预览、`timeplanner confirm --yes` 落地。"}]}
 
     @tool("remember_thought", "把一条重要的规划思考/取舍/观察记进 planner 记忆，下次开工能读回", {"text": str, "kind": str})
     async def remember_thought(args):
@@ -94,14 +114,15 @@ def build_options():
     server = create_sdk_mcp_server(
         name="timeplanner",
         version="0.1.0",
-        tools=[notes_summary, aw_summary, weather_summary, gcal_read,
+        tools=[notes_summary, aw_summary, weather_summary, timeline_read, stage_plan,
                remember_thought, remember_principle],
     )
     tool_names = [
         "mcp__timeplanner__notes_summary",
         "mcp__timeplanner__activitywatch_summary",
         "mcp__timeplanner__weather_summary",
-        "mcp__timeplanner__gcal_read",
+        "mcp__timeplanner__timeline_read",
+        "mcp__timeplanner__stage_plan",
         "mcp__timeplanner__remember_thought",
         "mcp__timeplanner__remember_principle",
     ]

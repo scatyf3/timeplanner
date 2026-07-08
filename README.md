@@ -3,7 +3,9 @@
 辅助式时间规划 agent —— 读你的 Obsidian 笔记 / ActivityWatch / 天气，出一天的 plan 草案，
 **你确认才写日历**。独立 Python 应用，Obsidian 库只当只读数据源。
 
-架构与分阶段计划见 [docs/](docs/)。当前进度：**Phase 0 / M0–M2**——CLI + 四个模块 + agent 出 plan/reflect 草案，均已在真实数据上跑通。M3（确认写入 GCal）待 OAuth 配置。
+架构与分阶段计划见 [docs/](docs/)。当前进度：**Phase 0 / M0–M3（本地版）**——CLI + 四个模块 + agent
+出 plan/reflect + **辅助式确认写入本地 timeline**（同 GCal schema），均已在真实数据上跑通。
+GCal 后端待 OAuth；届时换存储后端即可，core/agent 一行不动。
 
 ## 快速开始
 
@@ -23,9 +25,14 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 |---|---|---|
 | `timeplanner doctor` | 环境自检（库、AW、天气、GCal、SDK） | — |
 | `timeplanner summary [--date]` | 四个只读信号汇总（零 agent、零写入） | — |
-| `timeplanner plan [--date]` | 出今日 plan 草案 → 你确认才写 GCal | Agent SDK |
+| `timeplanner plan [--date]` | 出今日 plan 草案 → stage 到待确认区 | Agent SDK |
+| `timeplanner confirm [--date] [--yes]` | 辅助式闸门：预览 diff / `--yes` 写进本地 Plan timeline | — |
+| `timeplanner log START END BUCKET SUMMARY...` | 录一条 Actual 事件（②自报层） | — |
 | `timeplanner reflect [--date]` | 晚间复盘：①Plan vs ②Actual vs ③Observed | Agent SDK |
 | `timeplanner memory [--clear]` | 看/清 planner 记忆（规划思考 + 候选原则） | — |
+
+写入流程（辅助式）：`plan`（agent stage 草案）→ `confirm`（看 diff）→ `confirm --yes`（落地）。
+本地 timeline 存在 `data/plan.json` / `data/actual.json`（gitignore），schema 与 GCal 事件一致。
 
 ### Planner 记忆（自进化雏形）
 
@@ -36,10 +43,10 @@ plan/reflect 时 agent 可用 `remember_thought` / `remember_principle` 把**规
 
 ## 三层时间线
 
-| 层 | 载体 | 含义 |
+| 层 | 载体（当前 / 目标） | 含义 |
 |---|---|---|
-| ① Plan | GCal「Plan」日历 | 你打算怎么过（planner 生成、你确认） |
-| ② Actual | GCal「Actual」日历 | 你说你实际怎么过（`/log`） |
+| ① Plan | 本地 `data/plan.json` → GCal「Plan」 | 你打算怎么过（planner 生成、你确认） |
+| ② Actual | 本地 `data/actual.json` → GCal「Actual」 | 你说你实际怎么过（`log`） |
 | ③ Observed | ActivityWatch | 机器观测（只读，交叉验证②） |
 
 planner 写的事件都带标记 `extendedProperties.private={timeplanner:"1", bucket:...}`；
