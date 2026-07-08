@@ -16,5 +16,5 @@ client_secret*.json
 state.json
 *.sqlite
 
-# 笔记扫描缓存（按 mtime 失效，可随时删）
+# planner 记忆缓存（思考 + 候选原则，可随时删）
 .cache/

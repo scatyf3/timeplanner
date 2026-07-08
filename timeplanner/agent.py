@@ -10,12 +10,13 @@ from __future__ import annotations
 import datetime as dt
 
 from .config import config
-from .core import activitywatch, gcal, notes, weather
+from .core import activitywatch, gcal, memory, notes, weather
 
 
 def load_principles() -> str:
     p = config.principles_path
-    return p.read_text(encoding="utf-8") if p.is_file() else "(principles.md 缺失)"
+    base = p.read_text(encoding="utf-8") if p.is_file() else "(principles.md 缺失)"
+    return base + "\n" + memory.prompt_addendum()  # 叠加积累的候选原则
 
 
 def gather_context(date: dt.date | None = None) -> str:
@@ -47,6 +48,11 @@ SYSTEM_PROMPT = """你是 TimePlanner，一个**辅助式**时间规划 agent。
 plan 任务：读 notes/AW/天气/现有日历 → 产出一天的 timeline 草案（几点做哪块、几个专注 block），\
 用清晰列表呈现，标注理由，最后问人是否确认写入。
 reflect 任务：对比 ①Plan ②Actual ③Observed，走「收工 4 问」记分板，给一行 takeaway 建议。
+
+记忆（自进化）：你有两个记忆工具——
+- remember_thought：把这次规划里**重要的判断/取舍/观察**记下来（如「今天把 side 压到一格因为 main 有 deadline」），下次开工会读回，给你连续性。
+- remember_principle：当你和 ta 聊出一条**可复用的时间管理原则**时记下来（候选，之后并入 principles.md）。
+别记流水账；只记对未来排班真正有用的。每次 plan/reflect 结束前，回顾一下有没有值得记的。
 """
 
 
@@ -74,16 +80,30 @@ def build_options():
         d = _parse_date(args.get("date"))
         return {"content": [{"type": "text", "text": gcal.summary(d)}]}
 
+    @tool("remember_thought", "把一条重要的规划思考/取舍/观察记进 planner 记忆，下次开工能读回", {"text": str, "kind": str})
+    async def remember_thought(args):
+        memory.add_thought(args["text"], kind=args.get("kind", "plan"))
+        return {"content": [{"type": "text", "text": "🧠 已记入 planner 记忆。"}]}
+
+    @tool("remember_principle", "把一条提炼出的时间管理原则记进记忆（候选，之后合流到 principles.md）", {"text": str})
+    async def remember_principle(args):
+        added = memory.add_principle(args["text"], source="agent")
+        msg = "📌 已积累为候选原则。" if added else "（已有相同原则，未重复记。）"
+        return {"content": [{"type": "text", "text": msg}]}
+
     server = create_sdk_mcp_server(
         name="timeplanner",
         version="0.1.0",
-        tools=[notes_summary, aw_summary, weather_summary, gcal_read],
+        tools=[notes_summary, aw_summary, weather_summary, gcal_read,
+               remember_thought, remember_principle],
     )
     tool_names = [
         "mcp__timeplanner__notes_summary",
         "mcp__timeplanner__activitywatch_summary",
         "mcp__timeplanner__weather_summary",
         "mcp__timeplanner__gcal_read",
+        "mcp__timeplanner__remember_thought",
+        "mcp__timeplanner__remember_principle",
     ]
     return ClaudeAgentOptions(
         system_prompt=SYSTEM_PROMPT.format(principles=load_principles()),

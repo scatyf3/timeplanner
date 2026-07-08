@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import config
-from . import cache
 
 # Tasks 插件 deadline 语法：📅 YYYY-MM-DD
 DEADLINE_RE = re.compile(r"📅\s*(\d{4}-\d{2}-\d{2})")
@@ -117,28 +116,14 @@ def _parse_daily_text(text: str) -> dict:
     }
 
 
-def _cached_daily_text(path: Path) -> dict:
-    """按 mtime 缓存日记解析内容到 .cache/daily.json。文件没变就不重读不重解析。"""
-    if not config.cache_enabled:
-        return _parse_daily_text(path.read_text(encoding="utf-8"))
-    store = cache.load_store("daily")
-    key = str(path)
-    fk = cache.file_key(path)
-    entry = store.get(key)
-    if entry and entry.get("k") == fk:
-        return entry["v"]                # 命中：直接用缓存里的内容
-    fields = _parse_daily_text(path.read_text(encoding="utf-8"))
-    store[key] = {"k": fk, "v": fields}
-    cache.save_store("daily", store)
-    return fields
-
-
 def parse_daily(date: dt.date | None = None) -> DailyNote:
     date = date or dt.date.today()
     path = _daily_path(date)
     if not path.is_file():
         return DailyNote(date=date, exists=False, path=path)
-    return DailyNote(date=date, exists=True, path=path, **_cached_daily_text(path))
+    # 实时读，库当只读数据源，改即生效
+    return DailyNote(date=date, exists=True, path=path,
+                     **_parse_daily_text(path.read_text(encoding="utf-8")))
 
 
 @dataclass
@@ -171,19 +156,11 @@ def _extract_deadlines(md: Path) -> list[dict]:
 
 
 def scan_deadlines(within_days: int = 14, today: dt.date | None = None) -> list[Deadline]:
-    """扫库里 project/README 的 Tasks `📅` deadline，取未来 within_days 内的。
-
-    贵操作，走 mtime 缓存：每个文件的 deadline 列表按 mtime+size 缓存到 .cache/，
-    文件没变就不重读。缓存里存**全部** deadline，按日期过滤在读缓存之后做。
-    """
+    """扫库里 project/README 的 Tasks `📅` deadline，取未来 within_days 内的。实时读。"""
     today = today or dt.date.today()
     horizon = today + dt.timedelta(days=within_days)
     if not config.vault_ok():
         return []
-
-    use_cache = config.cache_enabled
-    old = cache.load_store("deadlines") if use_cache else {}
-    new: dict[str, dict] = {}  # 重建 → 顺带剔除已删除的文件
 
     found: list[Deadline] = []
     # 只扫 Projects（deadline 的主要来源），避免全库慢扫
@@ -192,24 +169,10 @@ def scan_deadlines(within_days: int = 14, today: dt.date | None = None) -> list[
         if not root.is_dir():
             continue
         for md in root.rglob("*.md"):
-            key = str(md)
-            try:
-                fk = cache.file_key(md)
-            except OSError:
-                continue
-            entry = old.get(key)
-            if use_cache and entry and entry.get("k") == fk:
-                raw = entry["v"]                    # 命中：跳过重读
-            else:
-                raw = _extract_deadlines(md)         # 未命中：重读
-            new[key] = {"k": fk, "v": raw}
-            for item in raw:
+            for item in _extract_deadlines(md):
                 d = dt.date.fromisoformat(item["date"])
                 if today <= d <= horizon:
                     found.append(Deadline(date=d, text=item["text"], source=item["source"]))
-
-    if use_cache and new != old:
-        cache.save_store("deadlines", new)
     found.sort(key=lambda x: x.date)
     return found
 

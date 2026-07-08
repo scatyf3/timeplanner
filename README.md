@@ -25,6 +25,14 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 | `timeplanner summary [--date]` | 四个只读信号汇总（零 agent、零写入） | — |
 | `timeplanner plan [--date]` | 出今日 plan 草案 → 你确认才写 GCal | Agent SDK |
 | `timeplanner reflect [--date]` | 晚间复盘：①Plan vs ②Actual vs ③Observed | Agent SDK |
+| `timeplanner memory [--clear]` | 看/清 planner 记忆（规划思考 + 候选原则） | — |
+
+### Planner 记忆（自进化雏形）
+
+plan/reflect 时 agent 可用 `remember_thought` / `remember_principle` 把**规划思考**和\
+**提炼的原则**落到 `.cache/memory.json`（gitignore）。下次开工先读回，planner 于是有连续性、\
+会长经验。定位：`principles.md`（git 追踪）是你 curate 的源头真相，`memory.json` 是 agent 积累的\
+候选，你觉得好的再手动并入 `principles.md`。
 
 ## 三层时间线
 
