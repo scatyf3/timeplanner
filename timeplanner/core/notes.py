@@ -71,13 +71,8 @@ class DailyNote:
     takeaway: str = ""
 
 
-def parse_daily(date: dt.date | None = None) -> DailyNote:
-    date = date or dt.date.today()
-    path = _daily_path(date)
-    if not path.is_file():
-        return DailyNote(date=date, exists=False, path=path)
-
-    text = path.read_text(encoding="utf-8")
+def _parse_daily_text(text: str) -> dict:
+    """纯函数：日记正文 → 结构化内容（todos/预算/优先级/takeaway）。可缓存的就是它。"""
     sections = _split_sections(text)
 
     todos: list[str] = []
@@ -113,16 +108,37 @@ def parse_daily(date: dt.date | None = None) -> DailyNote:
         if cand and not cand.startswith(bad) and not any(k in cand for k in labels):
             takeaway = cand
 
-    return DailyNote(
-        date=date,
-        exists=True,
-        path=path,
-        todos=todos,
-        unchecked_budget=unchecked,
-        checked_budget=checked,
-        priorities=priorities,
-        takeaway=takeaway,
-    )
+    return {
+        "todos": todos,
+        "unchecked_budget": unchecked,
+        "checked_budget": checked,
+        "priorities": priorities,
+        "takeaway": takeaway,
+    }
+
+
+def _cached_daily_text(path: Path) -> dict:
+    """按 mtime 缓存日记解析内容到 .cache/daily.json。文件没变就不重读不重解析。"""
+    if not config.cache_enabled:
+        return _parse_daily_text(path.read_text(encoding="utf-8"))
+    store = cache.load_store("daily")
+    key = str(path)
+    fk = cache.file_key(path)
+    entry = store.get(key)
+    if entry and entry.get("k") == fk:
+        return entry["v"]                # 命中：直接用缓存里的内容
+    fields = _parse_daily_text(path.read_text(encoding="utf-8"))
+    store[key] = {"k": fk, "v": fields}
+    cache.save_store("daily", store)
+    return fields
+
+
+def parse_daily(date: dt.date | None = None) -> DailyNote:
+    date = date or dt.date.today()
+    path = _daily_path(date)
+    if not path.is_file():
+        return DailyNote(date=date, exists=False, path=path)
+    return DailyNote(date=date, exists=True, path=path, **_cached_daily_text(path))
 
 
 @dataclass
