@@ -1,13 +1,16 @@
-"""Planner 记忆缓存：时间规划的**思考**与逐步积累的**原则**。
+"""Planner memory cache: the **thoughts** of time-planning and the **principles** gradually accumulated.
 
-对应 plan Phase 2 的「自进化」：agent 在 plan/reflect 里想通的东西、提炼出的新原则，
-落到 .cache/memory.json（gitignore），下次开工先读回来 —— 于是 planner 有连续性、会长经验。
+Corresponds to plan Phase 2's "self-evolution": things the agent works out during plan/reflect and the new
+principles it distills land in .cache/memory.json (gitignored), read back at the start of the next session ——
+so the planner has continuity and grows experience.
 
-定位：
-- principles.md（git 追踪）= 你curate过的**源头真相**
-- memory.json（.cache，缓存）= agent 积累的**候选思考/原则**，你觉得好的再手动提升进 principles.md
+Positioning:
+- principles.md (git-tracked) = the **source of truth** you've curated
+- memory.json (.cache, cache) = the **candidate thoughts/principles** the agent accumulates; the good ones you
+  manually promote into principles.md
 
-不碰 Obsidian 库；写日历那种外部动作仍走辅助式闸门，这里只是本地记忆。
+Doesn't touch the Obsidian vault; external actions like writing the calendar still go through the assistive gate,
+this is just local memory.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ def clear() -> None:
 
 
 def add_thought(text: str, kind: str = "plan", date: dt.date | None = None) -> None:
-    """记一条规划思考（plan/reflect 时的判断、取舍、观察）。"""
+    """Record a planning thought (a judgment, trade-off, or observation during plan/reflect)."""
     text = text.strip()
     if not text:
         return
@@ -49,7 +52,7 @@ def add_thought(text: str, kind: str = "plan", date: dt.date | None = None) -> N
 
 
 def add_principle(text: str, source: str = "reflect", date: dt.date | None = None) -> bool:
-    """积累一条候选原则。完全重复的不重复记。返回是否真的新增。"""
+    """Accumulate a candidate principle. Exact duplicates aren't recorded twice. Returns whether it was actually added."""
     text = text.strip()
     if not text:
         return False
@@ -74,7 +77,7 @@ def principles() -> list[dict]:
 
 
 def prompt_addendum() -> str:
-    """拼给 system prompt 的一段：agent 至今积累的候选原则。空则返回空串。"""
+    """A block to append to the system prompt: the candidate principles the agent has accumulated so far. Returns empty string if none."""
     ps = principles()
     if not ps:
         return ""
@@ -85,7 +88,7 @@ def prompt_addendum() -> str:
 
 
 def context_block(n_thoughts: int = 5) -> str:
-    """拼给 plan/reflect 任务的一段：最近的规划思考，给 agent 连续性。"""
+    """A block for plan/reflect tasks: recent planning thoughts, giving the agent continuity."""
     ths = recent_thoughts(n_thoughts)
     if not ths:
         return ""
@@ -96,7 +99,7 @@ def context_block(n_thoughts: int = 5) -> str:
 
 
 def render() -> str:
-    """CLI 展示。"""
+    """CLI display."""
     d = _load()
     lines = ["# 🧠 Planner 记忆缓存"]
     lines.append(f"\n## 候选原则（{len(d['principles'])}）")

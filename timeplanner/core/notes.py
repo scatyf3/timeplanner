@@ -1,7 +1,8 @@
-"""解析 Obsidian 日记 / project 笔记 → workload 信号。
+"""Parse Obsidian daily notes / project notes → workload signals.
 
-只读。库当只读数据源，绝不写。workload 推断按 plan 的基调：先用最笨但可解释的规则，
-事后按实际完成度校准，别过早上模型。
+Read-only. Treat the vault as a read-only data source, never write. Infer workload
+in the spirit of `plan`: start with the dumbest but explainable rules, calibrate
+later against actual completion, don't reach for a model too early.
 """
 
 from __future__ import annotations
@@ -13,23 +14,23 @@ from pathlib import Path
 
 from ..config import config
 
-# Tasks 插件 deadline 语法：📅 YYYY-MM-DD
+# Tasks plugin deadline syntax: 📅 YYYY-MM-DD
 DEADLINE_RE = re.compile(r"📅\s*(\d{4}-\d{2}-\d{2})")
-# 未完成 todo（复选框）
+# Unchecked todo (checkbox)
 UNCHECKED_RE = re.compile(r"^\s*-\s*\[\s\]\s*(.+)$")
 CHECKED_RE = re.compile(r"^\s*-\s*\[[xX]\]\s*(.+)$")
-# 顶层「## 段」
+# Top-level "## section"
 HEADING_RE = re.compile(r"^#{1,6}\s+(.*)$")
 
 
 def _daily_path(date: dt.date) -> Path:
-    """按库里的路径约定拼出某天日记的绝对路径。"""
+    """Build the absolute path to a given day's note following the vault's path convention."""
     folder = config.daily_glob.format(year=f"{date:%Y}", month=f"{date:%m}")
     return config.vault / folder / f"{date:%Y-%m-%d}.md"
 
 
 def _split_sections(text: str) -> dict[str, str]:
-    """把 markdown 按顶层 heading 切成 {标题: 正文}。"""
+    """Split markdown by top-level headings into {title: body}."""
     sections: dict[str, str] = {}
     current = "_preamble"
     buf: list[str] = []
@@ -46,7 +47,7 @@ def _split_sections(text: str) -> dict[str, str]:
 
 
 def _numbered_or_bullet_items(block: str) -> list[str]:
-    """从一段里抽出条目：既认 `1. xxx` 也认 `- xxx`，忽略空行与引用块。"""
+    """Extract items from a block: accepts both `1. xxx` and `- xxx`, skips blank lines and quote blocks."""
     items: list[str] = []
     for line in block.splitlines():
         s = line.strip()
@@ -63,15 +64,15 @@ class DailyNote:
     date: dt.date
     exists: bool
     path: Path
-    todos: list[str] = field(default_factory=list)          # ## TODO 下的条目
-    unchecked_budget: list[str] = field(default_factory=list)  # 记分板里没打勾的项
+    todos: list[str] = field(default_factory=list)          # items under ## TODO
+    unchecked_budget: list[str] = field(default_factory=list)  # unchecked items in the scoreboard
     checked_budget: list[str] = field(default_factory=list)
-    priorities: dict[str, str] = field(default_factory=dict)  # Main/Side/探索
+    priorities: dict[str, str] = field(default_factory=dict)  # Main/Side/exploration
     takeaway: str = ""
 
 
 def _parse_daily_text(text: str) -> dict:
-    """纯函数：日记正文 → 结构化内容（todos/预算/优先级/takeaway）。可缓存的就是它。"""
+    """Pure function: daily note body → structured content (todos/budget/priorities/takeaway). This is what's cacheable."""
     sections = _split_sections(text)
 
     todos: list[str] = []
@@ -101,7 +102,7 @@ def _parse_daily_text(text: str) -> dict:
     m = re.search(r"今日\s*takeaway[^\n]*[:：]?\s*(.*?)(?:\n|$)", text)
     if m:
         cand = m.group(1).strip()
-        # 空 takeaway 时别把下一个模板标签（如「停手前的 next action…」）误当内容
+        # when takeaway is empty, don't mistake the next template label (e.g. "next action before stopping…") for content
         bad = ("#", ">")
         labels = ("next action", "停手前", "今日感想", "感想")
         if cand and not cand.startswith(bad) and not any(k in cand for k in labels):
@@ -121,7 +122,7 @@ def parse_daily(date: dt.date | None = None) -> DailyNote:
     path = _daily_path(date)
     if not path.is_file():
         return DailyNote(date=date, exists=False, path=path)
-    # 实时读，库当只读数据源，改即生效
+    # read live; the vault is a read-only data source, edits take effect immediately
     return DailyNote(date=date, exists=True, path=path,
                      **_parse_daily_text(path.read_text(encoding="utf-8")))
 
@@ -134,7 +135,7 @@ class Deadline:
 
 
 def _extract_deadlines(md: Path) -> list[dict]:
-    """抽一个文件里所有未完成的 📅 deadline（不按日期过滤，便于缓存复用）。"""
+    """Extract all unfinished 📅 deadlines in a file (no date filtering, so it's cache-reusable)."""
     try:
         text = md.read_text(encoding="utf-8", errors="ignore")
     except OSError:
@@ -147,7 +148,7 @@ def _extract_deadlines(md: Path) -> list[dict]:
         if not m:
             continue
         try:
-            dt.date.fromisoformat(m.group(1))  # 校验合法
+            dt.date.fromisoformat(m.group(1))  # validate
         except ValueError:
             continue
         clean = DEADLINE_RE.sub("", line).strip(" -*[]x")
@@ -156,14 +157,14 @@ def _extract_deadlines(md: Path) -> list[dict]:
 
 
 def scan_deadlines(within_days: int = 14, today: dt.date | None = None) -> list[Deadline]:
-    """扫库里 project/README 的 Tasks `📅` deadline，取未来 within_days 内的。实时读。"""
+    """Scan Tasks `📅` deadlines in project/README notes, keep those within the next within_days. Read live."""
     today = today or dt.date.today()
     horizon = today + dt.timedelta(days=within_days)
     if not config.vault_ok():
         return []
 
     found: list[Deadline] = []
-    # 只扫 Projects（deadline 的主要来源），避免全库慢扫
+    # only scan Projects (the main source of deadlines) to avoid a slow full-vault scan
     roots = [config.vault / "1. Projects", config.vault / "1. Project"]
     for root in roots:
         if not root.is_dir():
@@ -187,10 +188,10 @@ class WorkloadEstimate:
 
 
 def estimate_workload(date: dt.date | None = None) -> WorkloadEstimate:
-    """v1 规则：可解释、可校准。别一上来搞复杂模型。
+    """v1 rules: explainable, calibratable. Don't jump straight to a complex model.
 
-    - 未完成 TODO 数 + 近 3 天 deadline 数 → 决定今天摆几个专注 block
-    - 模板默认预算是 3 个 90min block；这里给 2~4 的建议区间
+    - unfinished TODO count + deadlines in the next 3 days → decide how many focus blocks today
+    - the template's default budget is 3x 90min blocks; here we suggest a range of 2~4
     """
     date = date or dt.date.today()
     daily = parse_daily(date)
@@ -201,7 +202,7 @@ def estimate_workload(date: dt.date | None = None) -> WorkloadEstimate:
     near = len(deadlines)
     urgent_n = len(urgent)
 
-    # 简单单调函数，clamp 到 [2, 4]
+    # simple monotonic function, clamped to [2, 4]
     score = todo_count + 2 * urgent_n + max(0, near - urgent_n)
     if score <= 2:
         blocks = 2
@@ -225,7 +226,7 @@ def estimate_workload(date: dt.date | None = None) -> WorkloadEstimate:
 
 
 def summary(date: dt.date | None = None) -> str:
-    """人读的 workload summary（M1 只读输出 & agent 工具返回）。"""
+    """Human-readable workload summary (M1 read-only output & agent tool return)."""
     date = date or dt.date.today()
     daily = parse_daily(date)
     est = estimate_workload(date)

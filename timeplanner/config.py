@@ -1,4 +1,4 @@
-"""集中配置。所有路径/密钥从 .env 读，带合理默认。"""
+"""Centralized config. All paths/keys read from .env, with sensible defaults."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(REPO_ROOT / ".env")  # 锚定仓库的 .env，从任何目录跑都能读到
-except ImportError:  # dotenv 是软依赖，缺了也能跑（只是不自动读 .env）
+    load_dotenv(REPO_ROOT / ".env")  # anchor to the repo's .env so it's found from any directory
+except ImportError:  # dotenv is a soft dependency; runs without it (just won't auto-read .env)
     pass
 
 
@@ -21,7 +21,7 @@ def _get(key: str, default: str = "") -> str:
 
 
 def _repo_path(s: str) -> Path:
-    """相对路径锚定到仓库根，绝对路径原样。用于凭据等，保证换目录跑不失效。"""
+    """Relative paths anchor to the repo root, absolute paths as-is. For credentials etc., so it doesn't break when run from another directory."""
     p = Path(s).expanduser()
     return p if p.is_absolute() else REPO_ROOT / p
 
@@ -45,18 +45,18 @@ class Config:
     gcal_plan_id: str = field(default_factory=lambda: _get("GCAL_PLAN_ID"))
     gcal_actual_id: str = field(default_factory=lambda: _get("GCAL_ACTUAL_ID"))
 
-    # 存储后端：local（本地 data/*.json）| gcal（真日历）
+    # storage backend: local (local data/*.json) | gcal (real calendar)
     backend: str = field(default_factory=lambda: _get("TIMEPLANNER_BACKEND", "local"))
 
     tg_bot_token: str = field(default_factory=lambda: _get("TG_BOT_TOKEN"))
     tg_chat_id: str = field(default_factory=lambda: _get("TG_CHAT_ID"))
 
-    # 原则库
+    # principles library
     principles_path: Path = field(default_factory=lambda: REPO_ROOT / "principles.md")
 
-    # planner 记忆缓存目录（仓库内，gitignore，绝不碰库）
+    # planner memory cache directory (inside repo, gitignored, never touches the vault)
     cache_dir: Path = field(default_factory=lambda: REPO_ROOT / ".cache")
-    # 本地 timeline 数据（Plan/Actual，gitignore，是你的真实日程）
+    # local timeline data (Plan/Actual, gitignored, your real schedule)
     data_dir: Path = field(default_factory=lambda: REPO_ROOT / "data")
 
     def vault_ok(self) -> bool:

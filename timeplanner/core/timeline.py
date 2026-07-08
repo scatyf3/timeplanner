@@ -1,10 +1,10 @@
-"""本地 timeline —— GCal 的同 schema 替身，先跑通「确认写入」闭环，不依赖 Google。
+"""Local timeline —— a same-schema stand-in for GCal, to close the "confirmed write" loop without depending on Google.
 
-三层里的 ①Plan、②Actual 两层先落到本地 JSON（data/plan.json、data/actual.json），
-事件 schema 与 gcal.Event 完全一致（含 bucket 标记）。以后配好 OAuth，换成 gcal
-后端即可，core/agent 逻辑一行不动。
+Of the three layers, ①Plan and ②Actual first land in local JSON (data/plan.json, data/actual.json);
+the event schema is identical to gcal.Event (including the bucket marker). Once OAuth is set up,
+just switch to the gcal backend — the core/agent logic doesn't change a line.
 
-辅助式闸门：plan 出草案 → stage 到 proposed → `timeplanner confirm` 才真写。
+Assistive gate: plan produces a draft → stage into proposed → `timeplanner confirm` actually writes.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def _save_rows(which: str, rows: list[dict]) -> None:
     p = _file(which)
     tmp = p.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(p)  # 原子写
+    tmp.replace(p)  # atomic write
 
 
 def _row(e: Event) -> dict:
@@ -60,12 +60,12 @@ def _event(r: dict) -> Event:
         end=dt.datetime.fromisoformat(r["end"]),
         bucket=r.get("bucket", ""),
         event_id=r.get("id", ""),
-        external=False,  # 本地 timeline 全是 planner 写的；外部约束以后并 GCal 时才有
+        external=False,  # local timeline is all planner-written; external constraints only appear once GCal is merged in
     )
 
 
 def _hhmm(date: dt.date, s: str) -> dt.datetime:
-    """把 'HH:MM' 或完整 ISO 解析成带本地 tz 的 datetime。"""
+    """Parse 'HH:MM' or a full ISO string into a datetime with local tz."""
     s = s.strip()
     if "T" in s or len(s) > 5:
         return dt.datetime.fromisoformat(s).astimezone()
@@ -74,7 +74,7 @@ def _hhmm(date: dt.date, s: str) -> dt.datetime:
 
 
 def events_from_spec(date: dt.date, spec: list[dict]) -> list[Event]:
-    """agent 给的结构化草案 → Event 列表。spec 每项：{start,end,bucket,summary}。"""
+    """Structured draft from the agent → list of Events. Each spec item: {start,end,bucket,summary}."""
     out = []
     for it in spec:
         out.append(Event(
@@ -87,7 +87,7 @@ def events_from_spec(date: dt.date, spec: list[dict]) -> list[Event]:
     return out
 
 
-# ---- 读 ----
+# ---- read ----
 
 def list_events(date: dt.date | None = None, which: str = PLAN) -> list[Event]:
     date = date or dt.date.today()
@@ -97,12 +97,12 @@ def list_events(date: dt.date | None = None, which: str = PLAN) -> list[Event]:
     return evs
 
 
-# ---- 写（辅助式：先 stage，再 confirm）----
+# ---- write (assistive: stage first, then confirm) ----
 
-# -- staging（永远本地，是 backend 无关的暂存区）--
+# -- staging (always local, a backend-agnostic staging area) --
 
 def stage_plan(date: dt.date, spec: list[dict]) -> list[Event]:
-    """把 agent 的草案存成 proposed（覆盖当天旧提案），等 confirm。"""
+    """Store the agent's draft as proposed (overwriting the day's old proposal), awaiting confirm."""
     events = events_from_spec(date, spec)
     rows = [r for r in _load_rows(PROPOSED)
             if dt.datetime.fromisoformat(r["start"]).date() != date]  # 清掉当天旧提案
@@ -121,10 +121,10 @@ def make_event(date: dt.date, start: str, end: str, bucket: str, summary: str) -
     return Event(summary=summary, start=_hhmm(date, start), end=_hhmm(date, end), bucket=bucket)
 
 
-# -- 本地 backend 实现（与 gcal 同名接口：commit_plan / append_actual）--
+# -- local backend implementation (same-named interface as gcal: commit_plan / append_actual) --
 
 def commit_plan(date: dt.date, events: list[Event]) -> None:
-    """当天 Plan 用 events 替换（本地暂无外部事件要保留）。"""
+    """Replace the day's Plan with events (locally there are no external events to preserve for now)."""
     rows = [r for r in _load_rows(PLAN)
             if dt.datetime.fromisoformat(r["start"]).date() != date]
     rows += [_row(e) for e in events]
@@ -137,7 +137,7 @@ def append_actual(event: Event) -> None:
     _save_rows(ACTUAL, rows)
 
 
-# ---- 汇总（与 gcal.summary 同格式）----
+# ---- summary (same format as gcal.summary) ----
 
 def summary(date: dt.date | None = None, which: str = PLAN) -> str:
     date = date or dt.date.today()

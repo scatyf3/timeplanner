@@ -1,9 +1,9 @@
-"""存储后端路由：按 config.backend 把读写分派到本地 timeline 或真 GCal。
+"""Storage backend routing: per config.backend, dispatch reads/writes to the local timeline or the real GCal.
 
-- staging（proposed 草案）永远本地，是 backend 无关的暂存区。
-- confirm 编排在这里：读本地提案 → 辅助式 diff → 落到当前 backend。
-- local 与 gcal 两个模块实现同一套动词（list_events / commit_plan / append_actual / summary），
-  于是切后端只改一个 env，core/agent 一行不动。
+- staging (proposed drafts) is always local, a backend-agnostic staging area.
+- confirm is orchestrated here: read local proposals → assistive diff → land into the current backend.
+- the local and gcal modules implement the same set of verbs (list_events / commit_plan / append_actual / summary),
+  so switching backends only changes one env var, and core/agent doesn't change a line.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def summary(date: dt.date | None = None, which: str = "plan") -> str:
 
 
 def confirm(date: dt.date | None = None, dry_run: bool = True) -> str:
-    """把当天本地提案落进当前 backend 的 Plan。dry_run 只回显 diff（辅助式闸门）。"""
+    """Land the day's local proposal into the current backend's Plan. dry_run only echoes the diff (assistive gate)."""
     date = date or dt.date.today()
     proposed = timeline.list_events(date, timeline.PROPOSED)
     if not proposed:
@@ -52,7 +52,7 @@ def confirm(date: dt.date | None = None, dry_run: bool = True) -> str:
 
 
 def log_actual(date: dt.date, start: str, end: str, bucket: str, summary_text: str) -> Event:
-    """录一条 Actual 到当前 backend。"""
+    """Log one Actual to the current backend."""
     e = timeline.make_event(date, start, end, bucket, summary_text)
     _m().append_actual(e)
     return e

@@ -1,7 +1,8 @@
-"""Open-Meteo 预报（免 key）→ 出行/户外建议。
+"""Open-Meteo forecast (no key needed) → travel/outdoor advice.
 
-给 agent 一个信号：今天适不适合把「生活/健身」那一格安排成户外，还是留室内
-（呼应模板里「热天去学校地下健身房」这类原则）。
+Give the agent a signal: whether today is suitable for scheduling the "life/fitness"
+slot outdoors or keeping it indoors (echoing template principles like "hit the school's
+basement gym on hot days").
 """
 
 from __future__ import annotations

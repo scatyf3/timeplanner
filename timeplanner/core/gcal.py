@@ -1,11 +1,13 @@
-"""Google Calendar 读写（Plan / Actual 两个独立日历）。
+"""Google Calendar read/write (Plan / Actual are two separate calendars).
 
-地基是「标记机制」：planner 写的每个事件都带
+The foundation is a "marker mechanism": every event the planner writes carries
     extendedProperties.private = {timeplanner: "1", bucket: <main|side|life|fit>}
-读回来时没这个标的 → 一律当外部固定约束（会议/别人拉的活动），planner 只在空隙里排。
+When read back, anything without this marker → treated as an external fixed constraint
+(meetings / activities others created); the planner only schedules into the gaps.
 
-辅助式：所有写操作默认 dry_run=True，只回显 diff，不真写。CLI/TG 里你确认后才 dry_run=False。
-OAuth 未配置时，只读/写都优雅降级（返回提示），不影响 M1 只读跑通。
+Assistive: all write ops default to dry_run=True, only echoing the diff, not really writing.
+In CLI/TG you confirm before dry_run=False. When OAuth isn't configured, both read
+and write degrade gracefully (return a hint), without breaking the M1 read-only path.
 """
 
 from __future__ import annotations
@@ -30,9 +32,9 @@ class Event:
     summary: str
     start: dt.datetime
     end: dt.datetime
-    bucket: str = ""          # 空 = 外部事件
+    bucket: str = ""          # empty = external event
     event_id: str = ""
-    external: bool = False    # 没带 timeplanner 标 → True
+    external: bool = False    # no timeplanner marker → True
 
     def line(self) -> str:
         tag = f"[{self.bucket or 'ext'}]"
@@ -41,7 +43,7 @@ class Event:
 
 
 def _service():
-    """惰性建 Google Calendar service。缺依赖/缺凭据时抛 GCalNotConfigured。"""
+    """Lazily build the Google Calendar service. Raises GCalNotConfigured when deps/credentials are missing."""
     creds_path = Path(config.gcal_credentials)
     token_path = Path(config.gcal_token)
     if not creds_path.is_file() and not token_path.is_file():
@@ -99,7 +101,7 @@ def _cal_id(which: str) -> str:
 
 
 def list_events(date: dt.date | None = None, which: str = "plan") -> list[Event]:
-    """读某天 Plan/Actual 日历的事件，按开始时间排序。没带标记的记为外部约束。"""
+    """Read a day's Plan/Actual calendar events, sorted by start time. Unmarked ones count as external constraints."""
     date = date or dt.date.today()
     svc = _service()
     start = dt.datetime.combine(date, dt.time.min).astimezone()
@@ -125,23 +127,23 @@ def _insert(svc, cal: str, e: Event) -> None:
 
 
 def commit_plan(date: dt.date, events: list[Event]) -> None:
-    """把当天 Plan 换成 events：只删我们标记过的旧块（永不碰外部事件），再插新块。"""
+    """Replace the day's Plan with events: delete only the old blocks we marked (never touch external events), then insert the new ones."""
     svc = _service()
     cal = _cal_id("plan")
     for old in list_events(date, "plan"):
-        if not old.external and old.event_id:      # 只删 timeplanner 自己写的
+        if not old.external and old.event_id:      # only delete what timeplanner itself wrote
             svc.events().delete(calendarId=cal, eventId=old.event_id).execute()
     for e in events:
         _insert(svc, cal, e)
 
 
 def append_actual(event: Event) -> None:
-    """录一条 Actual 事件到 Actual 日历（带标记）。"""
+    """Log one Actual event to the Actual calendar (with marker)."""
     _insert(_service(), _cal_id("actual"), event)
 
 
 def summary(date: dt.date | None = None, which: str = "plan") -> str:
-    """读回 Plan/Actual 日历，区分 planner 事件与外部固定约束。"""
+    """Read back the Plan/Actual calendar, distinguishing planner events from external fixed constraints."""
     date = date or dt.date.today()
     label = {"plan": "Plan", "actual": "Actual"}.get(which, which)
     lines = [f"# 📅 GCal {label} —— {date:%Y-%m-%d}"]
@@ -153,7 +155,7 @@ def summary(date: dt.date | None = None, which: str = "plan") -> str:
     except GCalNotConfigured as e:
         lines.append(f"（{e}）")
         return "\n".join(lines)
-    except Exception as e:  # noqa: BLE001 — 网络/授权各种异常都别让 CLI 崩
+    except Exception as e:  # noqa: BLE001 — network/auth exceptions of all kinds must never crash the CLI
         lines.append(f"（读日历出错：{e}）")
         return "\n".join(lines)
 

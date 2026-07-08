@@ -1,11 +1,11 @@
-"""Phase 0 入口：终端对话。
+"""Phase 0 entry point: terminal conversation.
 
-    timeplanner summary [--date YYYY-MM-DD]   # M1：只读信号 + 本地 timeline
-    timeplanner doctor                        # 环境自检（M0）
-    timeplanner plan    [--date ...]          # 出今日 plan 草案并 stage（需 agent SDK）
-    timeplanner confirm [--date] [--yes]      # 辅助式确认：把提案写进本地 Plan timeline
-    timeplanner log START END BUCKET SUMMARY  # 录一条 Actual 事件（②自报层）
-    timeplanner reflect [--date ...]          # 晚间复盘（需 agent SDK）
+    timeplanner summary [--date YYYY-MM-DD]   # M1: read-only signals + local timeline
+    timeplanner doctor                        # environment self-check (M0)
+    timeplanner plan    [--date ...]          # produce today's plan draft and stage it (needs agent SDK)
+    timeplanner confirm [--date] [--yes]      # assisted confirm: write the proposal into the local Plan timeline
+    timeplanner log START END BUCKET SUMMARY  # record one Actual event (layer ②, self-report)
+    timeplanner reflect [--date ...]          # evening review (needs agent SDK)
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def _date(s: str | None) -> dt.date:
 
 
 def _now_hint(d: dt.date) -> str:
-    """当 d 是今天时，给 agent 明确的当前时刻（否则它会从 AW 等线索瞎猜）。"""
+    """When d is today, give the agent the exact current time (otherwise it guesses from AW and other clues)."""
     now = dt.datetime.now().astimezone()
     if d == now.date():
         wd = "一二三四五六日"[now.weekday()]
@@ -33,7 +33,7 @@ def _now_hint(d: dt.date) -> str:
 
 
 def cmd_doctor(_args) -> int:
-    """环境自检：库、AW、天气、GCal、agent SDK。"""
+    """Environment self-check: vault, AW, weather, GCal, agent SDK."""
     print("# 🩺 TimePlanner 环境自检\n")
     ok = True
 
@@ -68,7 +68,7 @@ def cmd_doctor(_args) -> int:
 
 
 def cmd_summary(args) -> int:
-    """M1：只读模块 summary + 当前后端的 timeline（Plan/Actual）。零 agent、零写入。"""
+    """M1: read-only module summary + current backend's timeline (Plan/Actual). No agent, no writes."""
     d = _date(args.date)
     print(notes.summary(d))
     print("\n" + activitywatch.summary(d))
@@ -95,14 +95,14 @@ def cmd_plan(args) -> int:
 
 
 def cmd_confirm(args) -> int:
-    """辅助式闸门：把当天 stage 的 plan 提案写进当前后端的 Plan。默认 dry-run，--yes 落地。"""
+    """Assisted gate: write the day's staged plan proposal into the current backend's Plan. Defaults to dry-run, --yes commits it."""
     d = _date(args.date)
     print(backend.confirm(d, dry_run=not args.yes))
     return 0
 
 
 def cmd_log(args) -> int:
-    """录一条 Actual 事件（②自报层）到当前后端。"""
+    """Record one Actual event (layer ②, self-report) to the current backend."""
     d = _date(args.date)
     e = backend.log_actual(d, args.start, args.end, args.bucket, " ".join(args.summary))
     print(f"📝 已录入 Actual（{backend.name()}）：{e.line()}")
@@ -124,7 +124,7 @@ def cmd_reflect(args) -> int:
 
 
 def cmd_memory(args) -> int:
-    """看 / 清 planner 记忆缓存（思考 + 候选原则）。"""
+    """View / clear the planner memory cache (thoughts + candidate principles)."""
     if args.clear:
         memory.clear()
         print("🧹 已清空 planner 记忆缓存。")

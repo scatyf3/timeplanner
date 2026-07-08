@@ -1,1 +1,1 @@
-"""界面无关的大脑：四个数据/动作模块。"""
+"""Interface-agnostic brain: the four data/action modules."""

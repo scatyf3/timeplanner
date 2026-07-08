@@ -1,7 +1,8 @@
-"""查本地 ActivityWatch REST → 专注 block / 分类时长。
+"""Query the local ActivityWatch REST API → focus blocks / time by category.
 
-这是「③ Observed（机器观测）」层，只读，用来交叉验证自报的 Actual。
-AW 通常在 localhost:5600。多台机器/多 hostname 时自动挑当天有事件的 bucket。
+This is the "③ Observed (machine-observed)" layer, read-only, used to cross-check the
+self-reported Actual. AW usually runs on localhost:5600. With multiple machines/hostnames
+it auto-picks the bucket that has events for the day.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ TIMEOUT = 5
 
 
 def _day_range(date: dt.date) -> tuple[str, str]:
-    """本地整天 [00:00, 次日00:00) 的 ISO 字符串（带本地 tz offset）。"""
+    """ISO strings for the local full day [00:00, next-day 00:00) (with local tz offset)."""
     start = dt.datetime.combine(date, dt.time.min).astimezone()
     end = start + dt.timedelta(days=1)
     return start.isoformat(), end.isoformat()
@@ -49,7 +50,7 @@ def _events(bucket_id: str, start: str, end: str) -> list[dict]:
 
 
 def _pick_bucket(buckets: dict[str, dict], bucket_type: str, start: str, end: str) -> tuple[str, list[dict]]:
-    """在给定 type 的 bucket 里挑当天事件最多的那个（处理多 hostname）。"""
+    """Among buckets of the given type, pick the one with the most events for the day (handles multiple hostnames)."""
     best_id, best_events = "", []
     for bid, meta in buckets.items():
         if meta.get("type") != bucket_type:
@@ -85,12 +86,12 @@ class Observed:
 
 
 def _merge_notafk(afk_events: list[dict], merge_gap_s: int = 300, min_block_min: int = 25) -> tuple[float, list[FocusBlock]]:
-    """把 not-afk 事件合并成专注 block：间隔 < merge_gap 的接起来，≥ min_block 的算一个 block。"""
+    """Merge not-afk events into focus blocks: join spans less than merge_gap apart, count those ≥ min_block as one block."""
     spans: list[tuple[dt.datetime, dt.datetime]] = []
     for e in afk_events:
         if e.get("data", {}).get("status") != "not-afk":
             continue
-        # AW 时间戳是 UTC，转本地时区再用（否则显示的 block 时间会偏时差）
+        # AW timestamps are UTC; convert to local tz before use (otherwise displayed block times are off by the tz offset)
         ts = dt.datetime.fromisoformat(e["timestamp"]).astimezone()
         dur = float(e.get("duration", 0))
         spans.append((ts, ts + dt.timedelta(seconds=dur)))
