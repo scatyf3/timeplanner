@@ -1,0 +1,27 @@
+[project]
+name = "timeplanner"
+version = "0.1.0"
+description = "辅助式时间规划 agent —— 读笔记/AW/天气，出 plan 草案，你确认才写日历"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "google-api-python-client>=2.100",
+    "google-auth-oauthlib>=1.2",
+    "google-auth>=2.30",
+]
+
+[project.optional-dependencies]
+# agent loop 走订阅额度（Claude Agent SDK）。只读 summary 不需要它。
+agent = ["claude-agent-sdk>=0.1.0"]
+
+[project.scripts]
+timeplanner = "timeplanner.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["timeplanner*"]

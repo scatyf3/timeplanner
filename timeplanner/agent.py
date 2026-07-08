@@ -1,0 +1,120 @@
+"""Agent SDK loop + 系统 prompt。
+
+四个 core 模块注册成工具，走 Claude Agent SDK（订阅额度，不额外按 token 计费）。
+SDK 是软依赖：没装时 plan/reflect 会提示装 `pip install -e '.[agent]'`，
+只读 summary 命令完全不依赖它。
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+
+from .config import config
+from .core import activitywatch, gcal, notes, weather
+
+
+def load_principles() -> str:
+    p = config.principles_path
+    return p.read_text(encoding="utf-8") if p.is_file() else "(principles.md 缺失)"
+
+
+def gather_context(date: dt.date | None = None) -> str:
+    """把四个只读信号拼成一段给 agent 的上下文（也可单独 `timeplanner summary` 看）。"""
+    date = date or dt.date.today()
+    parts = [
+        notes.summary(date),
+        activitywatch.summary(date),
+        weather.summary(date),
+        gcal.summary(date),
+    ]
+    return "\n\n".join(parts)
+
+
+SYSTEM_PROMPT = """你是 TimePlanner，一个**辅助式**时间规划 agent。你服务的人用 Obsidian 记日记、\
+用四个工作块管理一天：main（科研/deadline）· side（写代码/PhD 申请）· 生活 · 健身/娱乐。
+
+你的价值观来自下面的原则库，必须严格遵守：
+
+{principles}
+
+规则（硬约束）：
+1. 辅助式：你只**建议**。任何写日历的动作都要先给出清晰 diff，等人确认。绝不擅自写。
+2. 永不覆盖外部事件：日历里没带 timeplanner 标的事件是固定约束，只在其空隙排块。
+3. workload 推断已有规则给出建议 block 数，你可微调但要说明理由。
+4. 每块到点物理硬停；专注 block 默认 90min。
+5. 天气不好时把「生活/身体」那格挪室内。
+
+plan 任务：读 notes/AW/天气/现有日历 → 产出一天的 timeline 草案（几点做哪块、几个专注 block），\
+用清晰列表呈现，标注理由，最后问人是否确认写入。
+reflect 任务：对比 ①Plan ②Actual ③Observed，走「收工 4 问」记分板，给一行 takeaway 建议。
+"""
+
+
+def build_options():
+    """构造 ClaudeAgentOptions，把四个模块注册成工具。仅在装了 SDK 时调用。"""
+    from claude_agent_sdk import ClaudeAgentOptions, create_sdk_mcp_server, tool
+
+    @tool("notes_summary", "读当天 Obsidian 日记 + 近期 deadline，估计 workload", {"date": str})
+    async def notes_summary(args):
+        d = _parse_date(args.get("date"))
+        return {"content": [{"type": "text", "text": notes.summary(d)}]}
+
+    @tool("activitywatch_summary", "读 ActivityWatch 观测：在机时长、专注 block、Top 应用", {"date": str})
+    async def aw_summary(args):
+        d = _parse_date(args.get("date"))
+        return {"content": [{"type": "text", "text": activitywatch.summary(d)}]}
+
+    @tool("weather_summary", "取当天天气预报 + 户外建议", {"date": str})
+    async def weather_summary(args):
+        d = _parse_date(args.get("date"))
+        return {"content": [{"type": "text", "text": weather.summary(d)}]}
+
+    @tool("gcal_read", "读 Plan 日历当天事件，区分 planner 块与外部固定约束", {"date": str})
+    async def gcal_read(args):
+        d = _parse_date(args.get("date"))
+        return {"content": [{"type": "text", "text": gcal.summary(d)}]}
+
+    server = create_sdk_mcp_server(
+        name="timeplanner",
+        version="0.1.0",
+        tools=[notes_summary, aw_summary, weather_summary, gcal_read],
+    )
+    tool_names = [
+        "mcp__timeplanner__notes_summary",
+        "mcp__timeplanner__activitywatch_summary",
+        "mcp__timeplanner__weather_summary",
+        "mcp__timeplanner__gcal_read",
+    ]
+    return ClaudeAgentOptions(
+        system_prompt=SYSTEM_PROMPT.format(principles=load_principles()),
+        mcp_servers={"timeplanner": server},
+        allowed_tools=tool_names,
+    )
+
+
+def _parse_date(s) -> dt.date:
+    if not s:
+        return dt.date.today()
+    try:
+        return dt.date.fromisoformat(str(s))
+    except ValueError:
+        return dt.date.today()
+
+
+async def run(prompt: str) -> None:
+    """跑一轮 agent，流式打印到终端。"""
+    try:
+        from claude_agent_sdk import AssistantMessage, TextBlock, query
+    except ImportError:
+        print("⚠️  未安装 Claude Agent SDK。装它才能跑 agent：\n"
+              "    pip install -e '.[agent]'\n"
+              "（只读上下文可用 `timeplanner summary` 直接看，不需要 SDK。）")
+        return
+
+    options = build_options()
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    print(block.text, end="", flush=True)
+    print()

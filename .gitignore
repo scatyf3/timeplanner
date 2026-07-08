@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# 机密：OAuth token、TG token、库路径
+.env
+token.json
+credentials.json
+client_secret*.json
+
+# 本地状态
+state.json
+*.sqlite
