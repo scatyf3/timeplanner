@@ -90,7 +90,7 @@ def cmd_plan(args) -> int:
               "（即使还在等我确认），好让下次开工有连续性。")
     if mem:
         prompt += f"\n\n{mem}"
-    asyncio.run(agent.run(prompt))
+    asyncio.run(agent.run_interactive(prompt))
     return 0
 
 

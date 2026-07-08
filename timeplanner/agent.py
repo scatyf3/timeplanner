@@ -158,19 +158,23 @@ _TOOL_LABEL = {
 }
 
 
-async def run(prompt: str) -> None:
-    """跑一轮 agent：工具调用显示成暗色进度行，最终回答统一渲染，避免刷屏。"""
+def _sdk():
+    """惰性导入 SDK；缺了给提示并返回 None。"""
     try:
-        from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock, query
+        from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock  # noqa: F401
+        import claude_agent_sdk as sdk
+        return sdk
     except ImportError:
         print("⚠️  未安装 Claude Agent SDK。装它才能跑 agent：\n"
               "    pip install -e '.[agent]'\n"
               "（只读上下文可用 `timeplanner summary` 直接看，不需要 SDK。）")
-        return
+        return None
 
-    try:  # rich 可选：有就渲染 Markdown，没有就纯文本降级
+
+def _renderer():
+    """返回 (console, dim)。rich 可选：有就渲染 Markdown，没有纯文本降级。"""
+    try:
         from rich.console import Console
-        from rich.markdown import Markdown
         console = Console()
     except ImportError:
         console = None
@@ -181,23 +185,68 @@ async def run(prompt: str) -> None:
         else:
             print(f"\033[2m{msg}\033[0m")
 
-    options = build_options()
+    return console, dim
+
+
+async def _consume(message_iter, sdk, console, dim) -> None:
+    """消费一轮 agent 消息：工具调用显示成暗色进度行，最终回答统一渲染。"""
     chunks: list[str] = []
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, AssistantMessage):
+    async for message in message_iter:
+        if isinstance(message, sdk.AssistantMessage):
             for block in message.content:
-                if isinstance(block, TextBlock):
+                if isinstance(block, sdk.TextBlock):
                     chunks.append(block.text)
-                elif isinstance(block, ToolUseBlock):
+                elif isinstance(block, sdk.ToolUseBlock):
                     name = block.name.split("__")[-1]
                     if name in _TOOL_LABEL:  # 只显示自家工具，跳过 SDK 内建噪音
                         dim(f"  · {_TOOL_LABEL[name]}…")
-
     text = "".join(chunks).strip()
     if not text:
         return
-    print()  # 和进度行留一空行
+    print()
     if console:
+        from rich.markdown import Markdown
         console.print(Markdown(text))
     else:
         print(text)
+
+
+async def run(prompt: str) -> None:
+    """一次性跑一轮 agent（reflect 等用）。"""
+    sdk = _sdk()
+    if not sdk:
+        return
+    console, dim = _renderer()
+    await _consume(sdk.query(prompt=prompt, options=build_options()), sdk, console, dim)
+
+
+_EXIT_WORDS = {"", "done", "ok", "好了", "结束", "q", "quit", "exit", "confirm", "确认"}
+
+
+async def _ainput(prompt: str) -> str:
+    """不阻塞事件循环的 input。"""
+    import asyncio
+    return await asyncio.get_event_loop().run_in_executor(None, lambda: input(prompt))
+
+
+async def run_interactive(prompt: str) -> None:
+    """多轮会话：出草案后可继续补充信息、让 agent 重排，直到你结束。"""
+    sdk = _sdk()
+    if not sdk:
+        return
+    console, dim = _renderer()
+    options = build_options()
+    async with sdk.ClaudeSDKClient(options=options) as client:
+        await client.query(prompt)
+        await _consume(client.receive_response(), sdk, console, dim)
+        while True:
+            try:
+                more = await _ainput("\n💬 补充/调整后再排一轮（直接回车结束；结束后 tp confirm 落地）> ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if more.strip().lower() in _EXIT_WORDS:
+                break
+            await client.query(more)
+            await _consume(client.receive_response(), sdk, console, dim)
+    print("（已结束。最新草案已 stage —— 跑 `tp confirm` 预览、`tp confirm --yes` 落地。）")
