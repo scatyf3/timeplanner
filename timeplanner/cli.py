@@ -70,7 +70,9 @@ def cmd_plan(args) -> int:
     mem = memory.context_block()
     prompt = (f"今天是 {d:%Y-%m-%d}。请先用工具读 notes/AW/天气/现有日历，"
               "然后给我一份今日 plan 草案（timeline + 专注 block 数 + 理由），"
-              "最后问我是否确认写入。")
+              "最后问我是否确认写入。"
+              "\n\n**结束前必须调用 remember_thought**，一句话记下今天的关键取舍/判断"
+              "（即使还在等我确认），好让下次开工有连续性。")
     if mem:
         prompt += f"\n\n{mem}"
     asyncio.run(agent.run(prompt))
@@ -82,7 +84,9 @@ def cmd_reflect(args) -> int:
     d = _date(args.date)
     mem = memory.context_block()
     prompt = (f"今天是 {d:%Y-%m-%d}，晚间复盘。请对比 ①Plan(日历) ②Actual ③Observed(AW)，"
-              "走「收工 4 问」记分板，给我一行 takeaway 建议。")
+              "走「收工 4 问」记分板，给我一行 takeaway 建议。"
+              "\n\n**结束前必须调用 remember_thought** 记下今天的 takeaway/观察；"
+              "若这条经验能推广成一条可复用的时间管理原则，再调 remember_principle。")
     if mem:
         prompt += f"\n\n{mem}"
     asyncio.run(agent.run(prompt))
