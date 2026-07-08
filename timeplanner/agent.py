@@ -13,7 +13,7 @@ import datetime as dt
 import json
 
 from .config import config
-from .core import activitywatch, backend, memory, notes, timeline, weather
+from .core import activitywatch, backend, cubox, memory, notes, timeline, weather
 
 
 def load_principles() -> str:
@@ -63,7 +63,8 @@ SYSTEM_PROMPT = """你是 TimePlanner，一个**辅助式**时间规划 agent。
 plan 任务：读 notes/AW/天气/现有 timeline → 产出一天的 timeline 草案（几点做哪块、几个专注 block），\
 用清晰列表呈现并标注理由；然后**调用 stage_plan** 把这份草案 stage 起来（辅助式：这只是暂存，\
 人跑 `timeplanner confirm` 才真写进本地 Plan timeline），最后提示人去 confirm。
-reflect 任务：对比 ①Plan ②Actual（timeline_read）③Observed（AW），走「收工 4 问」记分板，给一行 takeaway 建议。
+reflect 任务：对比 ①Plan ②Actual（timeline_read）③Observed（AW），走「收工 4 问」记分板，给一行 takeaway 建议。\
+遇到今天暴露的问题（拖延、专注差、作息、精力管理…），可用 cubox_search 在 ta 收藏的学习/工作/健康文章里找对症的方法再给建议。
 
 记忆（自进化）：你有两个记忆工具——
 - remember_thought：把这次规划里**重要的判断/取舍/观察**记下来（如「今天把 side 压到一格因为 main 有 deadline」），下次开工会读回，给你连续性。
@@ -113,6 +114,13 @@ def build_options():
                 "text": f"🗂️ 已 stage {len(evs)} 个事件，等人确认：\n{body}\n"
                         f"让 ta 跑 `timeplanner confirm` 预览、`timeplanner confirm --yes` 落地。"}]}
 
+    @tool("cubox_search",
+          "在本地 Cubox 语料（我收藏的学习/工作/健康/心理文章 + 我的高亮批注）里搜关键词，"
+          "找可借鉴的方法/观点。query 用空格分词。",
+          {"query": str})
+    async def cubox_search(args):
+        return {"content": [{"type": "text", "text": cubox.search_summary(args.get("query", ""))}]}
+
     @tool("remember_thought", "把一条重要的规划思考/取舍/观察记进 planner 记忆，下次开工能读回", {"text": str, "kind": str})
     async def remember_thought(args):
         memory.add_thought(args["text"], kind=args.get("kind", "plan"))
@@ -128,7 +136,7 @@ def build_options():
         name="timeplanner",
         version="0.1.0",
         tools=[notes_summary, aw_summary, weather_summary, timeline_read, stage_plan,
-               remember_thought, remember_principle],
+               cubox_search, remember_thought, remember_principle],
     )
     tool_names = [
         "mcp__timeplanner__notes_summary",
@@ -136,6 +144,7 @@ def build_options():
         "mcp__timeplanner__weather_summary",
         "mcp__timeplanner__timeline_read",
         "mcp__timeplanner__stage_plan",
+        "mcp__timeplanner__cubox_search",
         "mcp__timeplanner__remember_thought",
         "mcp__timeplanner__remember_principle",
     ]
@@ -161,6 +170,7 @@ _TOOL_LABEL = {
     "weather_summary": "读天气",
     "timeline_read": "读 Plan/Actual timeline",
     "stage_plan": "暂存 plan 草案",
+    "cubox_search": "搜 Cubox 语料",
     "remember_thought": "记规划思考",
     "remember_principle": "记候选原则",
 }

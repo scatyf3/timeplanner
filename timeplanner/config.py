@@ -51,6 +51,14 @@ class Config:
     tg_bot_token: str = field(default_factory=lambda: _get("TG_BOT_TOKEN"))
     tg_chat_id: str = field(default_factory=lambda: _get("TG_CHAT_ID"))
 
+    # Cubox read API (key from https://<domain>/my/settings/extensions)
+    cubox_key: str = field(default_factory=lambda: _get("TIMEPLANNER_CUBOX_KEY"))
+    cubox_domain: str = field(default_factory=lambda: _get("TIMEPLANNER_CUBOX_DOMAIN", "cubox.cc"))
+    # folders synced locally as agent search/reflect material (comma-separated names)
+    cubox_folders: list[str] = field(default_factory=lambda: [
+        s.strip() for s in _get("TIMEPLANNER_CUBOX_FOLDERS", "科学学习,科学工作,health,心理").split(",")
+        if s.strip()])
+
     # principles library
     principles_path: Path = field(default_factory=lambda: REPO_ROOT / "principles.md")
 

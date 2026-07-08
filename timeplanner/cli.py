@@ -16,7 +16,7 @@ import datetime as dt
 import sys
 
 from .config import config
-from .core import activitywatch, backend, gcal, memory, notes, weather
+from .core import activitywatch, backend, cubox, gcal, memory, notes, weather
 
 
 def _date(s: str | None) -> dt.date:
@@ -130,6 +130,16 @@ def cmd_reflect(args) -> int:
     return 0
 
 
+def cmd_cubox(args) -> int:
+    """Sync the configured Cubox folders into the local corpus (agent search/reflect material)."""
+    full = not args.no_full
+    print(f"⏬ 同步 Cubox 文件夹 {config.cubox_folders}（{'含全文' if full else '仅高亮'}）…")
+    st = cubox.sync(full=full)
+    tail = f"、约 {st['chars']//1000}k 字全文" if full else ""
+    print(f"✅ {st['cards']} 篇、{st['highlights']} 条高亮{tail}。各文件夹：{st['folders']}")
+    return 0
+
+
 def cmd_memory(args) -> int:
     """View / clear the planner memory cache (thoughts + candidate principles)."""
     if args.clear:
@@ -155,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
     mp = sub.add_parser("memory", help="planner 记忆缓存（思考 + 候选原则）")
     mp.add_argument("--clear", action="store_true", help="清空记忆")
 
+    cb = sub.add_parser("cubox", help="同步配置的 Cubox 文件夹到本地语料（供 agent 搜索/复盘）")
+    cb.add_argument("--no-full", action="store_true", help="只拉高亮、不拉全文（更快）")
+
     cf = sub.add_parser("confirm", help="确认写入本地 Plan timeline")
     cf.add_argument("--date", help="YYYY-MM-DD，默认今天")
     cf.add_argument("--yes", action="store_true", help="真写（默认 dry-run 只预览）")
@@ -177,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         "plan": cmd_plan,
         "reflect": cmd_reflect,
         "memory": cmd_memory,
+        "cubox": cmd_cubox,
         "confirm": cmd_confirm,
         "log": cmd_log,
     }[args.cmd](args)
