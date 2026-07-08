@@ -59,12 +59,30 @@ def _numbered_or_bullet_items(block: str) -> list[str]:
     return items
 
 
+def _todo_done(content: str) -> tuple[str, bool]:
+    """A bullet's content → (clean text, done?). Done = checked `[x]` OR whole item struck `~~…~~`.
+
+    Supports both completion styles: Tasks-style checkbox and Markdown strikethrough.
+    """
+    done = False
+    cb = re.match(r"^\[([ xX])\]\s*(.*)$", content)   # `[x] …` / `[ ] …`
+    if cb:
+        done = cb.group(1).lower() == "x"
+        content = cb.group(2).strip()
+    stripped = content.strip()
+    if len(stripped) >= 4 and stripped.startswith("~~") and stripped.endswith("~~"):
+        done = True
+        content = stripped[2:-2].strip()
+    return content, done
+
+
 @dataclass
 class DailyNote:
     date: dt.date
     exists: bool
     path: Path
-    todos: list[str] = field(default_factory=list)          # items under ## TODO
+    todos: list[str] = field(default_factory=list)          # unfinished items under ## TODO
+    done_todos: list[str] = field(default_factory=list)     # finished ones (checked [x] or ~~struck~~)
     unchecked_budget: list[str] = field(default_factory=list)  # unchecked items in the scoreboard
     checked_budget: list[str] = field(default_factory=list)
     priorities: dict[str, str] = field(default_factory=dict)  # Main/Side/exploration
@@ -76,9 +94,12 @@ def _parse_daily_text(text: str) -> dict:
     sections = _split_sections(text)
 
     todos: list[str] = []
+    done_todos: list[str] = []
     for name, body in sections.items():
-        if name.upper().startswith("TODO") or "TODO" in name.upper():
-            todos.extend(_numbered_or_bullet_items(body))
+        if "TODO" in name.upper():
+            for raw in _numbered_or_bullet_items(body):
+                text, done = _todo_done(raw)
+                (done_todos if done else todos).append(text)
 
     unchecked, checked = [], []
     for line in text.splitlines():
@@ -110,6 +131,7 @@ def _parse_daily_text(text: str) -> dict:
 
     return {
         "todos": todos,
+        "done_todos": done_todos,
         "unchecked_budget": unchecked,
         "checked_budget": checked,
         "priorities": priorities,
@@ -241,10 +263,14 @@ def summary(date: dt.date | None = None) -> str:
     lines.append("")
     lines.append(f"**workload 估计**：{est.rationale}")
 
-    if daily.todos:
+    if daily.todos or daily.done_todos:
         lines.append("")
-        lines.append("**今日 TODO：**")
+        head = f"**今日 TODO（剩 {len(daily.todos)}"
+        if daily.done_todos:
+            head += f"，已完成 {len(daily.done_todos)}"
+        lines.append(head + "）：**")
         lines += [f"- {t}" for t in daily.todos]
+        lines += [f"- ~~{t}~~" for t in daily.done_todos]
 
     if daily.priorities:
         lines.append("")
