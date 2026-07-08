@@ -3,7 +3,7 @@
 辅助式时间规划 agent —— 读你的 Obsidian 笔记 / ActivityWatch / 天气，出一天的 plan 草案，
 **你确认才写日历**。独立 Python 应用，Obsidian 库只当只读数据源。
 
-架构与分阶段计划见 [docs/](docs/)。当前进度：**Phase 0 / M0–M1**（CLI + 四个只读模块）。
+架构与分阶段计划见 [docs/](docs/)。当前进度：**Phase 0 / M0–M2**——CLI + 四个模块 + agent 出 plan/reflect 草案，均已在真实数据上跑通。M3（确认写入 GCal）待 OAuth 配置。
 
 ## 快速开始
 
