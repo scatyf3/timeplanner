@@ -70,6 +70,13 @@ def cmd_doctor(_args) -> int:
 def cmd_summary(args) -> int:
     """M1: read-only module summary + current backend's timeline (Plan/Actual). No agent, no writes."""
     d = _date(args.date)
+    if not args.plain:
+        try:
+            from . import render
+            render.render(d)
+            return 0
+        except ImportError:
+            pass  # rich missing → fall back to plain text
     print(notes.summary(d))
     print("\n" + activitywatch.summary(d))
     print("\n" + weather.summary(d))
@@ -142,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         sp = sub.add_parser(name, help=help_)
         if name != "doctor":
             sp.add_argument("--date", help="YYYY-MM-DD，默认今天")
+        if name == "summary":
+            sp.add_argument("--plain", action="store_true", help="纯文本输出（不用 rich 渲染，便于管道/重定向）")
 
     mp = sub.add_parser("memory", help="planner 记忆缓存（思考 + 候选原则）")
     mp.add_argument("--clear", action="store_true", help="清空记忆")
