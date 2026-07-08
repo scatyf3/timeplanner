@@ -47,6 +47,11 @@ SYSTEM_PROMPT = """你是 TimePlanner，一个**辅助式**时间规划 agent。
 4. 每块到点物理硬停；专注 block 默认 90min。
 5. 天气不好时把「生活/身体」那格挪室内。
 
+输出面向终端，务必克制篇幅：
+- **别用宽 Markdown 表格**（终端会折行成一团）；timeline 用「时间 — 块 — 事件」的短行列表。
+- 少用多级标题和分隔线；总长控制在一屏内，理由每条一句话。
+- 先给结论（timeline + block 数），再简短理由，最后一句行动提示。
+
 plan 任务：读 notes/AW/天气/现有 timeline → 产出一天的 timeline 草案（几点做哪块、几个专注 block），\
 用清晰列表呈现并标注理由；然后**调用 stage_plan** 把这份草案 stage 起来（辅助式：这只是暂存，\
 人跑 `timeplanner confirm` 才真写进本地 Plan timeline），最后提示人去 confirm。
@@ -142,20 +147,57 @@ def _parse_date(s) -> dt.date:
         return dt.date.today()
 
 
+_TOOL_LABEL = {
+    "notes_summary": "读笔记 workload",
+    "activitywatch_summary": "读 ActivityWatch",
+    "weather_summary": "读天气",
+    "timeline_read": "读 Plan/Actual timeline",
+    "stage_plan": "暂存 plan 草案",
+    "remember_thought": "记规划思考",
+    "remember_principle": "记候选原则",
+}
+
+
 async def run(prompt: str) -> None:
-    """跑一轮 agent，流式打印到终端。"""
+    """跑一轮 agent：工具调用显示成暗色进度行，最终回答统一渲染，避免刷屏。"""
     try:
-        from claude_agent_sdk import AssistantMessage, TextBlock, query
+        from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock, query
     except ImportError:
         print("⚠️  未安装 Claude Agent SDK。装它才能跑 agent：\n"
               "    pip install -e '.[agent]'\n"
               "（只读上下文可用 `timeplanner summary` 直接看，不需要 SDK。）")
         return
 
+    try:  # rich 可选：有就渲染 Markdown，没有就纯文本降级
+        from rich.console import Console
+        from rich.markdown import Markdown
+        console = Console()
+    except ImportError:
+        console = None
+
+    def dim(msg: str) -> None:
+        if console:
+            console.print(msg, style="dim")
+        else:
+            print(f"\033[2m{msg}\033[0m")
+
     options = build_options()
+    chunks: list[str] = []
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):
-                    print(block.text, end="", flush=True)
-    print()
+                    chunks.append(block.text)
+                elif isinstance(block, ToolUseBlock):
+                    name = block.name.split("__")[-1]
+                    if name in _TOOL_LABEL:  # 只显示自家工具，跳过 SDK 内建噪音
+                        dim(f"  · {_TOOL_LABEL[name]}…")
+
+    text = "".join(chunks).strip()
+    if not text:
+        return
+    print()  # 和进度行留一空行
+    if console:
+        console.print(Markdown(text))
+    else:
+        print(text)
