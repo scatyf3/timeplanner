@@ -23,6 +23,15 @@ def _date(s: str | None) -> dt.date:
     return dt.date.fromisoformat(s) if s else dt.date.today()
 
 
+def _now_hint(d: dt.date) -> str:
+    """当 d 是今天时，给 agent 明确的当前时刻（否则它会从 AW 等线索瞎猜）。"""
+    now = dt.datetime.now().astimezone()
+    if d == now.date():
+        wd = "一二三四五六日"[now.weekday()]
+        return f"现在是周{wd} {now:%H:%M}（{now:%Z}）。"
+    return ""
+
+
 def cmd_doctor(_args) -> int:
     """环境自检：库、AW、天气、GCal、agent SDK。"""
     print("# 🩺 TimePlanner 环境自检\n")
@@ -73,8 +82,9 @@ def cmd_plan(args) -> int:
     from . import agent
     d = _date(args.date)
     mem = memory.context_block()
-    prompt = (f"今天是 {d:%Y-%m-%d}。请先用工具读 notes/AW/天气/现有 timeline，"
+    prompt = (f"今天是 {d:%Y-%m-%d}。{_now_hint(d)}请先用工具读 notes/AW/天气/现有 timeline，"
               "然后给我一份今日 plan 草案（timeline + 专注 block 数 + 理由），"
+              "从现在这个时刻往后排，别排已经过去的时段；"
               "并**调用 stage_plan** 把草案 stage 起来，提示我跑 `timeplanner confirm` 确认。"
               "\n\n**结束前必须调用 remember_thought**，一句话记下今天的关键取舍/判断"
               "（即使还在等我确认），好让下次开工有连续性。")
@@ -103,7 +113,7 @@ def cmd_reflect(args) -> int:
     from . import agent
     d = _date(args.date)
     mem = memory.context_block()
-    prompt = (f"今天是 {d:%Y-%m-%d}，晚间复盘。请用 timeline_read 读 ①Plan ②Actual，"
+    prompt = (f"今天是 {d:%Y-%m-%d}，晚间复盘。{_now_hint(d)}请用 timeline_read 读 ①Plan ②Actual，"
               "配合 ③Observed(AW)，走「收工 4 问」记分板，给我一行 takeaway 建议。"
               "\n\n**结束前必须调用 remember_thought** 记下今天的 takeaway/观察；"
               "若这条经验能推广成一条可复用的时间管理原则，再调 remember_principle。")

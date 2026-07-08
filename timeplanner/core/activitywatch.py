@@ -90,7 +90,8 @@ def _merge_notafk(afk_events: list[dict], merge_gap_s: int = 300, min_block_min:
     for e in afk_events:
         if e.get("data", {}).get("status") != "not-afk":
             continue
-        ts = dt.datetime.fromisoformat(e["timestamp"])
+        # AW 时间戳是 UTC，转本地时区再用（否则显示的 block 时间会偏时差）
+        ts = dt.datetime.fromisoformat(e["timestamp"]).astimezone()
         dur = float(e.get("duration", 0))
         spans.append((ts, ts + dt.timedelta(seconds=dur)))
     spans.sort()
