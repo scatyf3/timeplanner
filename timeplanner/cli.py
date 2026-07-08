@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     lg = sub.add_parser("log", help="录一条 Actual 事件")
     lg.add_argument("start", help="开始 HH:MM")
     lg.add_argument("end", help="结束 HH:MM")
-    lg.add_argument("bucket", choices=["main", "side", "life", "fit"], help="工作块")
+    lg.add_argument("bucket", choices=["main", "side", "life", "health", "fun"], help="工作块")
     lg.add_argument("summary", nargs="+", help="事件描述")
     lg.add_argument("--date", help="YYYY-MM-DD，默认今天")
 

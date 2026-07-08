@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 from ..config import config
-from .gcal import BUCKETS, Event
+from .gcal import Event, norm_bucket
 
 # which ∈ {"plan", "actual", "proposed"}
 PLAN, ACTUAL, PROPOSED = "plan", "actual", "proposed"
@@ -49,7 +49,7 @@ def _row(e: Event) -> dict:
         "summary": e.summary,
         "start": e.start.isoformat(),
         "end": e.end.isoformat(),
-        "bucket": e.bucket if e.bucket in BUCKETS else "main",
+        "bucket": norm_bucket(e.bucket),
     }
 
 
@@ -105,7 +105,7 @@ def stage_plan(date: dt.date, spec: list[dict]) -> list[Event]:
     """Store the agent's draft as proposed (overwriting the day's old proposal), awaiting confirm."""
     events = events_from_spec(date, spec)
     rows = [r for r in _load_rows(PROPOSED)
-            if dt.datetime.fromisoformat(r["start"]).date() != date]  # 清掉当天旧提案
+            if dt.datetime.fromisoformat(r["start"]).date() != date]  # drop the day's old proposal
     rows += [_row(e) for e in events]
     _save_rows(PROPOSED, rows)
     return events
@@ -139,7 +139,7 @@ def append_actual(event: Event) -> None:
 
 # ---- summary (same format as gcal.summary) ----
 
-def summary(date: dt.date | None = None, which: str = PLAN) -> str:
+def summary(date: dt.date | None = None, which: str = PLAN, color: bool | None = None) -> str:
     date = date or dt.date.today()
     label = {"plan": "Plan", "actual": "Actual", "proposed": "待确认提案"}.get(which, which)
     evs = list_events(date, which)
@@ -148,7 +148,7 @@ def summary(date: dt.date | None = None, which: str = PLAN) -> str:
         lines.append("（空）")
         return "\n".join(lines)
     for e in evs:
-        lines.append(e.line())
+        lines.append(e.line(color))
     return "\n".join(lines)
 
 

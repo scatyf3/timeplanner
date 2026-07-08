@@ -13,6 +13,7 @@ and write degrade gracefully (return a hint), without breaking the M1 read-only 
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,7 +21,50 @@ from ..config import config
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 MARKER_KEY = "timeplanner"
-BUCKETS = {"main", "side", "life", "fit"}
+BUCKETS = {"main", "side", "life", "health", "fun"}
+# "fit" is the legacy fitness bucket; still accepted on read/rewrite, colored as health.
+VALID_BUCKETS = BUCKETS | {"fit"}
+
+
+def norm_bucket(b: str) -> str:
+    """Coerce an unknown bucket to 'main'; legacy 'fit' is kept as-is."""
+    return b if b in VALID_BUCKETS else "main"
+
+
+# Bucket → Google Calendar event colorId, matching the user's Time Record scheme:
+#   工作=蓝 · 生活杂务=黄 · 健康=浅绿 · 娱乐=深绿
+BUCKET_COLOR_ID = {
+    "main": "7",     # Peacock (blue)    — 工作
+    "side": "7",     # Peacock (blue)    — 工作
+    "life": "5",     # Banana (yellow)   — 生活杂务
+    "health": "2",   # Sage (light green)— 健康
+    "fun": "10",     # Basil (dark green)— 娱乐
+    "fit": "2",      # legacy → 健康
+}
+
+# Bucket → hex color for rich renderables (same scheme, matching the GCal palette).
+BUCKET_HEX = {
+    "main": "#039be5",   # Peacock (blue)     — 工作
+    "side": "#039be5",   # Peacock (blue)     — 工作
+    "life": "#f6bf26",   # Banana (yellow)    — 生活杂务
+    "health": "#33b679", # Sage (light green) — 健康
+    "fun": "#0b8043",    # Basil (dark green) — 娱乐
+    "fit": "#33b679",    # legacy → 健康
+}
+
+# Bucket → ANSI SGR code for the terminal timeline lines (same scheme).
+_BUCKET_ANSI = {
+    "main": "34",    # blue
+    "side": "34",    # blue
+    "life": "33",    # yellow
+    "health": "92",  # bright (light) green
+    "fun": "32",     # green (dark)
+    "fit": "92",     # legacy → light green
+}
+
+
+def _use_color() -> bool:
+    return sys.stdout.isatty()
 
 
 class GCalNotConfigured(RuntimeError):
@@ -36,10 +80,14 @@ class Event:
     event_id: str = ""
     external: bool = False    # no timeplanner marker → True
 
-    def line(self) -> str:
+    def line(self, color: bool | None = None) -> str:
         tag = f"[{self.bucket or 'ext'}]"
         lock = "🔒" if self.external else "  "
-        return f"{lock} {self.start:%H:%M}–{self.end:%H:%M} {tag} {self.summary}"
+        text = f"{lock} {self.start:%H:%M}–{self.end:%H:%M} {tag} {self.summary}"
+        if color is None:
+            color = _use_color()
+        code = _BUCKET_ANSI.get(self.bucket) if (color and self.bucket) else None
+        return f"\033[{code}m{text}\033[0m" if code else text
 
 
 def _service():
@@ -117,13 +165,17 @@ def list_events(date: dt.date | None = None, which: str = "plan") -> list[Event]
 
 
 def _insert(svc, cal: str, e: Event) -> None:
-    bucket = e.bucket if e.bucket in BUCKETS else "main"
-    svc.events().insert(calendarId=cal, body={
+    bucket = norm_bucket(e.bucket)
+    body = {
         "summary": e.summary,
         "start": {"dateTime": e.start.isoformat()},
         "end": {"dateTime": e.end.isoformat()},
         "extendedProperties": {"private": {MARKER_KEY: "1", "bucket": bucket}},
-    }).execute()
+    }
+    color = BUCKET_COLOR_ID.get(bucket)
+    if color:
+        body["colorId"] = color  # color-code by bucket to match the Time Record scheme
+    svc.events().insert(calendarId=cal, body=body).execute()
 
 
 def commit_plan(date: dt.date, events: list[Event]) -> None:
@@ -142,7 +194,7 @@ def append_actual(event: Event) -> None:
     _insert(_service(), _cal_id("actual"), event)
 
 
-def summary(date: dt.date | None = None, which: str = "plan") -> str:
+def summary(date: dt.date | None = None, which: str = "plan", color: bool | None = None) -> str:
     """Read back the Plan/Actual calendar, distinguishing planner events from external fixed constraints."""
     date = date or dt.date.today()
     label = {"plan": "Plan", "actual": "Actual"}.get(which, which)
@@ -166,7 +218,7 @@ def summary(date: dt.date | None = None, which: str = "plan") -> str:
     ours = [e for e in events if not e.external]
     lines.append(f"planner 事件 {len(ours)} 个，外部固定约束 {len(ext)} 个（🔒 只读）：")
     for e in events:
-        lines.append(e.line())
+        lines.append(e.line(color))
     return "\n".join(lines)
 
 

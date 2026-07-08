@@ -37,6 +37,13 @@ def gather_context(date: dt.date | None = None) -> str:
 SYSTEM_PROMPT = """你是 TimePlanner，一个**辅助式**时间规划 agent。你服务的人用 Obsidian 记日记、\
 用四个工作块管理一天：main（科研/deadline）· side（写代码/PhD 申请）· 生活 · 健身/娱乐。
 
+排 block 时给每段标一个 bucket（用于日历配色，对齐 ta 的 Time record）：
+- main / side —— 工作（蓝）
+- life —— 生活杂务（黄）
+- health —— 健康：健身、运动、睡眠、身体（浅绿）
+- fun —— 娱乐：放松、玩、回血（深绿）
+「健身/娱乐」那一格按当下活动性质选 health 或 fun。
+
 你的价值观来自下面的原则库，必须严格遵守：
 
 {principles}
@@ -87,12 +94,12 @@ def build_options():
     @tool("timeline_read", "读当前后端当天的 ①Plan 与 ②Actual 事件", {"date": str})
     async def timeline_read(args):
         d = _parse_date(args.get("date"))
-        text = backend.summary(d, "plan") + "\n\n" + backend.summary(d, "actual")
+        text = backend.summary(d, "plan", color=False) + "\n\n" + backend.summary(d, "actual", color=False)
         return {"content": [{"type": "text", "text": text}]}
 
     @tool("stage_plan",
           "把今日 timeline 草案 stage 到待确认区（人跑 `timeplanner confirm` 才真写）。"
-          "events_json 是 JSON 数组，每项 {start:'HH:MM', end:'HH:MM', bucket:'main|side|life|fit', summary:'...'}",
+          "events_json 是 JSON 数组，每项 {start:'HH:MM', end:'HH:MM', bucket:'main|side|life|health|fun', summary:'...'}",
           {"date": str, "events_json": str})
     async def stage_plan(args):
         d = _parse_date(args.get("date"))
@@ -101,7 +108,7 @@ def build_options():
         except (json.JSONDecodeError, KeyError) as e:
             return {"content": [{"type": "text", "text": f"⚠️ events_json 解析失败：{e}"}]}
         evs = timeline.stage_plan(d, spec)
-        body = "\n".join(f"  {e.line()}" for e in evs)
+        body = "\n".join(f"  {e.line(color=False)}" for e in evs)
         return {"content": [{"type": "text",
                 "text": f"🗂️ 已 stage {len(evs)} 个事件，等人确认：\n{body}\n"
                         f"让 ta 跑 `timeplanner confirm` 预览、`timeplanner confirm --yes` 落地。"}]}

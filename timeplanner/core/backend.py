@@ -27,8 +27,8 @@ def list_events(date: dt.date | None = None, which: str = "plan") -> list[Event]
     return _m().list_events(date, which)
 
 
-def summary(date: dt.date | None = None, which: str = "plan") -> str:
-    return _m().summary(date, which)
+def summary(date: dt.date | None = None, which: str = "plan", color: bool | None = None) -> str:
+    return _m().summary(date, which, color)
 
 
 def confirm(date: dt.date | None = None, dry_run: bool = True) -> str:
