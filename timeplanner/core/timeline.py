@@ -99,6 +99,8 @@ def list_events(date: dt.date | None = None, which: str = PLAN) -> list[Event]:
 
 # ---- 写（辅助式：先 stage，再 confirm）----
 
+# -- staging（永远本地，是 backend 无关的暂存区）--
+
 def stage_plan(date: dt.date, spec: list[dict]) -> list[Event]:
     """把 agent 的草案存成 proposed（覆盖当天旧提案），等 confirm。"""
     events = events_from_spec(date, spec)
@@ -109,39 +111,30 @@ def stage_plan(date: dt.date, spec: list[dict]) -> list[Event]:
     return events
 
 
-def confirm(date: dt.date | None = None, dry_run: bool = True) -> str:
-    """把当天 proposed 落进 Plan timeline。dry_run 只回显 diff。"""
-    date = date or dt.date.today()
-    proposed = list_events(date, PROPOSED)
-    if not proposed:
-        return f"（{date:%Y-%m-%d} 没有待确认的 plan 提案；先跑 `timeplanner plan`。）"
-
-    head = f"# ✅ 确认写入 Plan timeline —— {date:%Y-%m-%d}" + ("  （DRY RUN，未写）" if dry_run else "")
-    lines = [head] + [f"+ {e.line()}" for e in proposed]
-    if dry_run:
-        lines.append("\n加 --yes 落地：`timeplanner confirm --yes`")
-        return "\n".join(lines)
-
-    # 真写：当天 Plan 用提案替换（planner 事件重排；本地暂无外部事件要保留）
-    rows = [r for r in _load_rows(PLAN)
-            if dt.datetime.fromisoformat(r["start"]).date() != date]
-    rows += [_row(e) for e in proposed]
-    _save_rows(PLAN, rows)
-    # 清掉已确认的提案
+def clear_proposed(date: dt.date) -> None:
     rest = [r for r in _load_rows(PROPOSED)
             if dt.datetime.fromisoformat(r["start"]).date() != date]
     _save_rows(PROPOSED, rest)
-    lines.append(f"\n✅ 已写入 {len(proposed)} 个事件到本地 Plan timeline（{_file(PLAN)}）")
-    return "\n".join(lines)
 
 
-def log_actual(date: dt.date, start: str, end: str, bucket: str, summary: str) -> Event:
-    """录一条实际发生的事件到 Actual timeline（②自报层）。"""
-    e = Event(summary=summary, start=_hhmm(date, start), end=_hhmm(date, end), bucket=bucket)
+def make_event(date: dt.date, start: str, end: str, bucket: str, summary: str) -> Event:
+    return Event(summary=summary, start=_hhmm(date, start), end=_hhmm(date, end), bucket=bucket)
+
+
+# -- 本地 backend 实现（与 gcal 同名接口：commit_plan / append_actual）--
+
+def commit_plan(date: dt.date, events: list[Event]) -> None:
+    """当天 Plan 用 events 替换（本地暂无外部事件要保留）。"""
+    rows = [r for r in _load_rows(PLAN)
+            if dt.datetime.fromisoformat(r["start"]).date() != date]
+    rows += [_row(e) for e in events]
+    _save_rows(PLAN, rows)
+
+
+def append_actual(event: Event) -> None:
     rows = _load_rows(ACTUAL)
-    rows.append(_row(e))
+    rows.append(_row(event))
     _save_rows(ACTUAL, rows)
-    return e
 
 
 # ---- 汇总（与 gcal.summary 同格式）----

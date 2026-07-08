@@ -69,11 +69,25 @@ timeplanner/
 └─ docs/                 # 需求 + 架构实施计划
 ```
 
-## 配置 Google Calendar（M3 才需要）
+## 存储后端：local / gcal
 
-1. Google Cloud Console → 建 OAuth 客户端（桌面应用）→ 下载 json → 存为 `credentials.json`
-2. GCal 里建两个日历「Plan」「Actual」，把各自 ID 填进 `.env` 的 `GCAL_PLAN_ID` / `GCAL_ACTUAL_ID`
-3. 首次跑写操作会弹浏览器授权，token 存 `token.json`（都已 gitignore）
+一个 env 切换写到哪，core/agent 一行不动（`timeline.py` 与 `gcal.py` 同 `Event` schema）：
+
+```
+TIMEPLANNER_BACKEND=local   # 默认，写本地 data/*.json
+TIMEPLANNER_BACKEND=gcal    # 写真 Google 日历
+```
+
+staging（`plan` 的草案）永远本地；`confirm`/`log`/读取按后端路由。
+
+### 配置 Google Calendar
+
+1. Google Cloud Console → 建 OAuth 客户端（**Desktop app**）→ 下载 json → 路径填 `.env` 的 `GCAL_CREDENTIALS`
+   - OAuth consent screen 里把自己加进 **Test users**（个人自用无需 Google 验证）
+2. 建两个日历「Plan」「Actual」，各自 ID 填 `GCAL_PLAN_ID` / `GCAL_ACTUAL_ID`
+3. 首次写操作弹浏览器授权，token 存 `token.json`（都已 gitignore）
+4. 标记机制：planner 写的事件带 `timeplanner` 标；**没标的一律当外部固定约束**，
+   planner 只在空隙排块、`confirm` 时只删自己写的块，**永不覆盖你手建的会议**
 
 ## 下一步（见 docs 里程碑）
 

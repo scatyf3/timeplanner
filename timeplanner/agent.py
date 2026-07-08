@@ -12,7 +12,7 @@ import datetime as dt
 import json
 
 from .config import config
-from .core import activitywatch, memory, notes, timeline, weather
+from .core import activitywatch, backend, memory, notes, timeline, weather
 
 
 def load_principles() -> str:
@@ -28,7 +28,7 @@ def gather_context(date: dt.date | None = None) -> str:
         notes.summary(date),
         activitywatch.summary(date),
         weather.summary(date),
-        timeline.summary(date, timeline.PLAN),
+        backend.summary(date, "plan"),
     ]
     return "\n\n".join(parts)
 
@@ -83,10 +83,10 @@ def build_options():
         d = _parse_date(args.get("date"))
         return {"content": [{"type": "text", "text": weather.summary(d)}]}
 
-    @tool("timeline_read", "读本地 timeline 当天的 ①Plan 与 ②Actual 事件", {"date": str})
+    @tool("timeline_read", "读当前后端当天的 ①Plan 与 ②Actual 事件", {"date": str})
     async def timeline_read(args):
         d = _parse_date(args.get("date"))
-        text = timeline.summary(d, timeline.PLAN) + "\n\n" + timeline.summary(d, timeline.ACTUAL)
+        text = backend.summary(d, "plan") + "\n\n" + backend.summary(d, "actual")
         return {"content": [{"type": "text", "text": text}]}
 
     @tool("stage_plan",

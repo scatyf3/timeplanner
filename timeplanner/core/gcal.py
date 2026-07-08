@@ -92,15 +92,20 @@ def is_configured() -> bool:
     return Path(config.gcal_credentials).is_file() or Path(config.gcal_token).is_file()
 
 
-def list_events(date: dt.date | None = None, calendar_id: str | None = None) -> list[Event]:
-    """读某天某日历的事件（默认 Plan 日历）。返回按开始时间排序。"""
+def _cal_id(which: str) -> str:
+    if which == "actual":
+        return config.gcal_actual_id or "primary"
+    return config.gcal_plan_id or "primary"
+
+
+def list_events(date: dt.date | None = None, which: str = "plan") -> list[Event]:
+    """读某天 Plan/Actual 日历的事件，按开始时间排序。没带标记的记为外部约束。"""
     date = date or dt.date.today()
-    cal = calendar_id or config.gcal_plan_id or "primary"
     svc = _service()
     start = dt.datetime.combine(date, dt.time.min).astimezone()
     end = start + dt.timedelta(days=1)
     resp = svc.events().list(
-        calendarId=cal,
+        calendarId=_cal_id(which),
         timeMin=start.isoformat(),
         timeMax=end.isoformat(),
         singleEvents=True,
@@ -109,39 +114,42 @@ def list_events(date: dt.date | None = None, calendar_id: str | None = None) -> 
     return [_to_event(it) for it in resp.get("items", [])]
 
 
-def write_events(events: list[Event], calendar_id: str | None = None, dry_run: bool = True) -> str:
-    """把 planner 的块写进日历，每个都打 timeplanner 标。dry_run=True 只回显不写。"""
-    cal = calendar_id or config.gcal_plan_id or "primary"
-    diff = ["# 📅 待写入事件（Plan 日历）" + ("  —— DRY RUN，未真写" if dry_run else "")]
-    for e in events:
-        diff.append("+ " + e.line())
+def _insert(svc, cal: str, e: Event) -> None:
+    bucket = e.bucket if e.bucket in BUCKETS else "main"
+    svc.events().insert(calendarId=cal, body={
+        "summary": e.summary,
+        "start": {"dateTime": e.start.isoformat()},
+        "end": {"dateTime": e.end.isoformat()},
+        "extendedProperties": {"private": {MARKER_KEY: "1", "bucket": bucket}},
+    }).execute()
 
-    if dry_run:
-        diff.append("\n（确认后以 dry_run=False 落地）")
-        return "\n".join(diff)
 
+def commit_plan(date: dt.date, events: list[Event]) -> None:
+    """把当天 Plan 换成 events：只删我们标记过的旧块（永不碰外部事件），再插新块。"""
     svc = _service()
+    cal = _cal_id("plan")
+    for old in list_events(date, "plan"):
+        if not old.external and old.event_id:      # 只删 timeplanner 自己写的
+            svc.events().delete(calendarId=cal, eventId=old.event_id).execute()
     for e in events:
-        bucket = e.bucket if e.bucket in BUCKETS else "main"
-        svc.events().insert(calendarId=cal, body={
-            "summary": e.summary,
-            "start": {"dateTime": e.start.isoformat()},
-            "end": {"dateTime": e.end.isoformat()},
-            "extendedProperties": {"private": {MARKER_KEY: "1", "bucket": bucket}},
-        }).execute()
-    diff.append(f"\n✅ 已写入 {len(events)} 个事件到 {cal}")
-    return "\n".join(diff)
+        _insert(svc, cal, e)
 
 
-def summary(date: dt.date | None = None) -> str:
-    """读回 Plan 日历，区分 planner 事件与外部固定约束。"""
+def append_actual(event: Event) -> None:
+    """录一条 Actual 事件到 Actual 日历（带标记）。"""
+    _insert(_service(), _cal_id("actual"), event)
+
+
+def summary(date: dt.date | None = None, which: str = "plan") -> str:
+    """读回 Plan/Actual 日历，区分 planner 事件与外部固定约束。"""
     date = date or dt.date.today()
-    lines = [f"# 📅 GCal Plan —— {date:%Y-%m-%d}"]
+    label = {"plan": "Plan", "actual": "Actual"}.get(which, which)
+    lines = [f"# 📅 GCal {label} —— {date:%Y-%m-%d}"]
     if not is_configured():
-        lines.append("（未配置 Google OAuth —— M1 只读阶段可跳过；配置见 README。）")
+        lines.append("（未配置 Google OAuth —— 见 README。）")
         return "\n".join(lines)
     try:
-        events = list_events(date)
+        events = list_events(date, which)
     except GCalNotConfigured as e:
         lines.append(f"（{e}）")
         return "\n".join(lines)

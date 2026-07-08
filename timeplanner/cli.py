@@ -16,7 +16,7 @@ import datetime as dt
 import sys
 
 from .config import config
-from .core import activitywatch, gcal, memory, notes, timeline, weather
+from .core import activitywatch, backend, gcal, memory, notes, weather
 
 
 def _date(s: str | None) -> dt.date:
@@ -44,7 +44,9 @@ def cmd_doctor(_args) -> int:
           else f"⚠️  天气 API：{w.note}")
 
     print("✅ GCal 已配置 OAuth" if gcal.is_configured()
-          else "⚠️  GCal 未配置（M3 才需要；见 README）")
+          else "⚠️  GCal 未配置（见 README）")
+    print(f"🎯 存储后端：{backend.name()}"
+          + ("（写真日历）" if backend.name() == "gcal" else "（写本地 data/*.json）"))
 
     try:
         import claude_agent_sdk  # noqa: F401
@@ -57,15 +59,13 @@ def cmd_doctor(_args) -> int:
 
 
 def cmd_summary(args) -> int:
-    """M1：只读模块 summary + 本地 timeline（Plan/Actual）。零 agent、零写入。"""
+    """M1：只读模块 summary + 当前后端的 timeline（Plan/Actual）。零 agent、零写入。"""
     d = _date(args.date)
     print(notes.summary(d))
     print("\n" + activitywatch.summary(d))
     print("\n" + weather.summary(d))
-    print("\n" + timeline.summary(d, timeline.PLAN))
-    print("\n" + timeline.summary(d, timeline.ACTUAL))
-    if gcal.is_configured():
-        print("\n" + gcal.summary(d))
+    print("\n" + backend.summary(d, "plan"))
+    print("\n" + backend.summary(d, "actual"))
     return 0
 
 
@@ -85,17 +85,17 @@ def cmd_plan(args) -> int:
 
 
 def cmd_confirm(args) -> int:
-    """辅助式闸门：把当天 stage 的 plan 提案写进本地 Plan timeline。默认 dry-run，--yes 落地。"""
+    """辅助式闸门：把当天 stage 的 plan 提案写进当前后端的 Plan。默认 dry-run，--yes 落地。"""
     d = _date(args.date)
-    print(timeline.confirm(d, dry_run=not args.yes))
+    print(backend.confirm(d, dry_run=not args.yes))
     return 0
 
 
 def cmd_log(args) -> int:
-    """录一条 Actual 事件（②自报层）。"""
+    """录一条 Actual 事件（②自报层）到当前后端。"""
     d = _date(args.date)
-    e = timeline.log_actual(d, args.start, args.end, args.bucket, " ".join(args.summary))
-    print(f"📝 已录入 Actual：{e.line()}")
+    e = backend.log_actual(d, args.start, args.end, args.bucket, " ".join(args.summary))
+    print(f"📝 已录入 Actual（{backend.name()}）：{e.line()}")
     return 0
 
 

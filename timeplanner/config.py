@@ -37,6 +37,9 @@ class Config:
     gcal_plan_id: str = field(default_factory=lambda: _get("GCAL_PLAN_ID"))
     gcal_actual_id: str = field(default_factory=lambda: _get("GCAL_ACTUAL_ID"))
 
+    # 存储后端：local（本地 data/*.json）| gcal（真日历）
+    backend: str = field(default_factory=lambda: _get("TIMEPLANNER_BACKEND", "local"))
+
     tg_bot_token: str = field(default_factory=lambda: _get("TG_BOT_TOKEN"))
     tg_chat_id: str = field(default_factory=lambda: _get("TG_CHAT_ID"))
 
