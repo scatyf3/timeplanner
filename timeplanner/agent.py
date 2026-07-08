@@ -223,8 +223,14 @@ async def run(prompt: str) -> None:
 _EXIT_WORDS = {"", "done", "ok", "好了", "结束", "q", "quit", "exit", "confirm", "确认"}
 
 
+try:
+    import readline  # noqa: F401  导入即为 input() 启用行编辑（方向键移光标、退格、历史）
+except ImportError:
+    pass
+
+
 async def _ainput(prompt: str) -> str:
-    """不阻塞事件循环的 input。"""
+    """不阻塞事件循环的 input（已启用 readline 行编辑）。"""
     import asyncio
     return await asyncio.get_event_loop().run_in_executor(None, lambda: input(prompt))
 
