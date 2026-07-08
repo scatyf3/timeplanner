@@ -43,6 +43,10 @@ class Config:
     # 原则库
     principles_path: Path = field(default_factory=lambda: REPO_ROOT / "principles.md")
 
+    # 缓存（仓库内，gitignore，绝不碰库）。TIMEPLANNER_CACHE=0 关掉。
+    cache_dir: Path = field(default_factory=lambda: REPO_ROOT / ".cache")
+    cache_enabled: bool = field(default_factory=lambda: _get("TIMEPLANNER_CACHE", "1") != "0")
+
     def vault_ok(self) -> bool:
         return self.vault.is_dir()
 

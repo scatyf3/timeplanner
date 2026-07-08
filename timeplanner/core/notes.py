@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import config
+from . import cache
 
 # Tasks 插件 deadline 语法：📅 YYYY-MM-DD
 DEADLINE_RE = re.compile(r"📅\s*(\d{4}-\d{2}-\d{2})")
@@ -131,12 +132,42 @@ class Deadline:
     source: str
 
 
+def _extract_deadlines(md: Path) -> list[dict]:
+    """抽一个文件里所有未完成的 📅 deadline（不按日期过滤，便于缓存复用）。"""
+    try:
+        text = md.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
+    out: list[dict] = []
+    for line in text.splitlines():
+        if "📅" not in line or CHECKED_RE.match(line):
+            continue
+        m = DEADLINE_RE.search(line)
+        if not m:
+            continue
+        try:
+            dt.date.fromisoformat(m.group(1))  # 校验合法
+        except ValueError:
+            continue
+        clean = DEADLINE_RE.sub("", line).strip(" -*[]x")
+        out.append({"date": m.group(1), "text": clean[:120], "source": md.name})
+    return out
+
+
 def scan_deadlines(within_days: int = 14, today: dt.date | None = None) -> list[Deadline]:
-    """扫库里 project/README 的 Tasks `📅` deadline，取未来 within_days 内的。"""
+    """扫库里 project/README 的 Tasks `📅` deadline，取未来 within_days 内的。
+
+    贵操作，走 mtime 缓存：每个文件的 deadline 列表按 mtime+size 缓存到 .cache/，
+    文件没变就不重读。缓存里存**全部** deadline，按日期过滤在读缓存之后做。
+    """
     today = today or dt.date.today()
     horizon = today + dt.timedelta(days=within_days)
     if not config.vault_ok():
         return []
+
+    use_cache = config.cache_enabled
+    old = cache.load_store("deadlines") if use_cache else {}
+    new: dict[str, dict] = {}  # 重建 → 顺带剔除已删除的文件
 
     found: list[Deadline] = []
     # 只扫 Projects（deadline 的主要来源），避免全库慢扫
@@ -145,26 +176,24 @@ def scan_deadlines(within_days: int = 14, today: dt.date | None = None) -> list[
         if not root.is_dir():
             continue
         for md in root.rglob("*.md"):
+            key = str(md)
             try:
-                text = md.read_text(encoding="utf-8", errors="ignore")
+                fk = cache.file_key(md)
             except OSError:
                 continue
-            for line in text.splitlines():
-                if "📅" not in line:
-                    continue
-                # 已完成的任务跳过
-                if CHECKED_RE.match(line):
-                    continue
-                m = DEADLINE_RE.search(line)
-                if not m:
-                    continue
-                try:
-                    d = dt.date.fromisoformat(m.group(1))
-                except ValueError:
-                    continue
+            entry = old.get(key)
+            if use_cache and entry and entry.get("k") == fk:
+                raw = entry["v"]                    # 命中：跳过重读
+            else:
+                raw = _extract_deadlines(md)         # 未命中：重读
+            new[key] = {"k": fk, "v": raw}
+            for item in raw:
+                d = dt.date.fromisoformat(item["date"])
                 if today <= d <= horizon:
-                    clean = DEADLINE_RE.sub("", line).strip(" -*[]x")
-                    found.append(Deadline(date=d, text=clean[:120], source=md.name))
+                    found.append(Deadline(date=d, text=item["text"], source=item["source"]))
+
+    if use_cache and new != old:
+        cache.save_store("deadlines", new)
     found.sort(key=lambda x: x.date)
     return found
 

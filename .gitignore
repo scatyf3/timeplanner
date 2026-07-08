@@ -15,3 +15,6 @@ client_secret*.json
 # 本地状态
 state.json
 *.sqlite
+
+# 笔记扫描缓存（按 mtime 失效，可随时删）
+.cache/

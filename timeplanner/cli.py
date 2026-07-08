@@ -14,7 +14,7 @@ import datetime as dt
 import sys
 
 from .config import config
-from .core import activitywatch, gcal, notes, weather
+from .core import activitywatch, cache, gcal, notes, weather
 
 
 def _date(s: str | None) -> dt.date:
@@ -52,6 +52,23 @@ def cmd_doctor(_args) -> int:
 
     print("\n结论：M1 只读闭环" + ("可跑通 ✅" if ok else "缺库路径 ❌"))
     return 0 if ok else 1
+
+
+def cmd_cache(args) -> int:
+    """缓存管理：默认看状态，--clear 清空。"""
+    if args.clear:
+        n = cache.clear()
+        print(f"🧹 已清空缓存（删除 {n} 个文件）：{config.cache_dir}")
+        return 0
+    d = config.cache_dir
+    state = "开启" if config.cache_enabled else "关闭（TIMEPLANNER_CACHE=0）"
+    print(f"缓存目录：{d}\n状态：{state}")
+    if d.is_dir():
+        for f in sorted(d.glob("*.json")):
+            print(f"  - {f.name}  ({f.stat().st_size} B)")
+    else:
+        print("  （尚未生成）")
+    return 0
 
 
 def cmd_summary(args) -> int:
@@ -93,6 +110,9 @@ def main(argv: list[str] | None = None) -> int:
         if name != "doctor":
             sp.add_argument("--date", help="YYYY-MM-DD，默认今天")
 
+    cp = sub.add_parser("cache", help="缓存管理")
+    cp.add_argument("--clear", action="store_true", help="清空缓存")
+
     args = p.parse_args(argv)
     if not args.cmd:
         p.print_help()
@@ -103,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         "summary": cmd_summary,
         "plan": cmd_plan,
         "reflect": cmd_reflect,
+        "cache": cmd_cache,
     }[args.cmd](args)
 
 
