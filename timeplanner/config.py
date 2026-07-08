@@ -6,18 +6,24 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 try:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    load_dotenv(REPO_ROOT / ".env")  # 锚定仓库的 .env，从任何目录跑都能读到
 except ImportError:  # dotenv 是软依赖，缺了也能跑（只是不自动读 .env）
     pass
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _get(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
+
+
+def _repo_path(s: str) -> Path:
+    """相对路径锚定到仓库根，绝对路径原样。用于凭据等，保证换目录跑不失效。"""
+    p = Path(s).expanduser()
+    return p if p.is_absolute() else REPO_ROOT / p
 
 
 @dataclass
@@ -32,8 +38,10 @@ class Config:
     lon: float = field(default_factory=lambda: float(_get("TIMEPLANNER_LON", "-73.9965")))
     timezone: str = field(default_factory=lambda: _get("TIMEPLANNER_TIMEZONE", "America/New_York"))
 
-    gcal_credentials: str = field(default_factory=lambda: _get("GCAL_CREDENTIALS", "credentials.json"))
-    gcal_token: str = field(default_factory=lambda: _get("GCAL_TOKEN", "token.json"))
+    gcal_credentials: str = field(
+        default_factory=lambda: str(_repo_path(_get("GCAL_CREDENTIALS", "credentials.json"))))
+    gcal_token: str = field(
+        default_factory=lambda: str(_repo_path(_get("GCAL_TOKEN", "token.json"))))
     gcal_plan_id: str = field(default_factory=lambda: _get("GCAL_PLAN_ID"))
     gcal_actual_id: str = field(default_factory=lambda: _get("GCAL_ACTUAL_ID"))
 
