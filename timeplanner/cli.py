@@ -16,7 +16,7 @@ import datetime as dt
 import sys
 
 from .config import config
-from .core import activitywatch, backend, cubox, gcal, memory, notes, weather
+from .core import activitywatch, backend, cubox, gcal, memory, notes, rollover, weather
 
 
 def _date(s: str | None) -> dt.date:
@@ -180,6 +180,14 @@ def main(argv: list[str] | None = None) -> int:
     lg.add_argument("--date", help="YYYY-MM-DD，默认今天")
 
     args = p.parse_args(argv)
+
+    # Day-rollover hook: on any invocation, flush past days' timeline to Obsidian & clear cache.
+    try:
+        for d in rollover.run():
+            print(f"📥 {d:%Y-%m-%d} 的 timeline 已回填到 Obsidian 日记，并从本地缓存清除。")
+    except Exception as e:  # noqa: BLE001 — a rollover hiccup must never break the actual command
+        print(f"⚠️ 跨日回填跳过：{e}", file=sys.stderr)
+
     if not args.cmd:
         p.print_help()
         return 0

@@ -97,6 +97,20 @@ def list_events(date: dt.date | None = None, which: str = PLAN) -> list[Event]:
     return evs
 
 
+def all_events(which: str = PLAN) -> list[Event]:
+    """Every event in a local timeline file, unfiltered by date (sorted by start). Used by the day-rollover flush."""
+    evs = [_event(r) for r in _load_rows(which)]
+    evs.sort(key=lambda e: e.start)
+    return evs
+
+
+def drop_date(date: dt.date, which: str) -> None:
+    """Remove all events on `date` from a local timeline file (used after the rollover flush writes them to Obsidian)."""
+    rest = [r for r in _load_rows(which)
+            if dt.datetime.fromisoformat(r["start"]).date() != date]
+    _save_rows(which, rest)
+
+
 # ---- write (assistive: stage first, then confirm) ----
 
 # -- staging (always local, a backend-agnostic staging area) --
