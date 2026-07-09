@@ -83,40 +83,58 @@ timeplanner aw-export      # → 📤 已导出 … JuanitadeMacBook-Air-<date>.
 timeplanner summary        # ③ AW 分钟数应等于本机实时 AW，且 note 不出现「合并 2 台」
 ```
 
-### 4. 配对（把 Windows 和 Mac 连起来）— ⬜ 待办
-Mac 侧加 Windows 为远程设备，并接受共享文件夹：
+### 4. Mac 侧 Syncthing 配对 — ✅ 已配
 ```sh
-syncthing cli config devices add \
-  --device-id UAAIR6J-VG5U7QW-7K2PMIJ-2O35VVZ-G32HAPX-UVQ7KUA-P25L26N-N2OWPAB \
-  --name windows-collector
+syncthing cli config devices add --device-id UAAIR6J-… --name windows-collector
+syncthing cli config folders add --id timeplanner-aw --label timeplanner-aw --path ~/ActivityWatchSync
+syncthing cli config folders timeplanner-aw devices add --device-id UAAIR6J-…
 ```
-然后 **Windows GUI** 里「Add Remote Device」粘贴 Mac 的设备 ID（见上），
-编辑 `timeplanner-aw` 文件夹 →「Sharing」勾上 Mac → Save；
-Mac GUI 弹「新文件夹」→ 接受，路径设 `~/ActivityWatchSync`（**Folder ID 必须是 `timeplanner-aw`**）。
 
-### 5. 定时导出（每 10 分钟）— ⬜ 待办
-`~/Library/LaunchAgents/com.timeplanner.awexport.plist`，`StartInterval` = 600，
-`ProgramArguments` = `/usr/bin/python3 <repo>/scripts/aw_export.py --sync-dir ~/ActivityWatchSync
---host JuanitadeMacBook-Air`（**`--host` 别漏**，否则快照名跟着 IP 变）。然后：
-```sh
-launchctl load ~/Library/LaunchAgents/com.timeplanner.awexport.plist
-```
-或用 cron：
-```cron
-*/10 * * * * /usr/bin/python3 <repo>/scripts/aw_export.py --sync-dir ~/ActivityWatchSync --host JuanitadeMacBook-Air >> /tmp/aw_export.log 2>&1
-```
+### 5. 定时导出（每 10 分钟）— ✅ 已装
+`~/Library/LaunchAgents/com.timeplanner.awexport.plist`，`StartInterval`=600，`RunAtLoad`，
+日志 `/tmp/timeplanner-aw-export.log`。`launchctl list | grep awexport` 第二列是上次退出码（0=好）。
+
+> **launchd 跑的是 `~/.local/bin/aw_export.py` 这份拷贝，不是仓库里的脚本。**
+> macOS TCC 不给 launchd agent 读 `~/Documents`，直接指仓库路径会
+> `[Errno 1] Operation not permitted`。改了仓库脚本记得刷新拷贝：
+> ```sh
+> cp scripts/aw_export.py ~/.local/bin/aw_export.py
+> ```
+> 这也是 `aw_export.py` 写成零依赖单文件的原因——它本来就是拿去别的机器上部署的。
+
+卸载：`launchctl unload ~/Library/LaunchAgents/com.timeplanner.awexport.plist && rm 该 plist`。
+
+### 6. Windows 侧接受 — ⬜ 待办（唯一剩下的手工步骤）
+Mac 已经在往 Windows 敲门了：日志里能看到 `Established secure connection … device=UAAIR6J`
+紧接着 `Lost device connection … error="reading length: EOF"` —— 就是 Windows 还不认识 Mac，
+握完手直接把连接关了。在 **Windows GUI**（http://127.0.0.1:8384）：
+
+1. 「Add Remote Device」→ 粘贴 Mac 设备 ID `6ZIQFEW-U6L6P7L-AQHPICM-V25V7DL-5SQA3GP-LNSIZZ4-YGB5D63-5HJNUA3` → Save
+   （Mac 已连过，多半会直接弹「New Device」提示，点接受即可）
+2. 编辑 `timeplanner-aw` 文件夹 →「Sharing」勾上 Mac → Save
 
 ---
 
 ## 验证
 
-Mac 导出后，Windows 上等 Syncthing 同步过来（几秒），然后：
+配对连上后，Mac 导出 → Windows 等几秒同步过来，然后在 **Windows** 上：
 ```sh
 timeplanner summary          # ③ AW 那条线应出现 Mac 的 focus block，app 占比合并两台
 ```
-`timeplanner summary` 顶部若显示「（合并 2 台：DESKTOP-…, <mac>）」即成功。
+显示「（合并 2 台：DESKTOP-…, JuanitadeMacBook-Air）」即成功。
+
+反过来在 **Mac** 上跑 `timeplanner summary`：它走本机实时 AW，会跳过自己那份快照，
+所以在 Windows 的快照同步过来之前，note 应该是**空的**。若在只有一台机器时就看到
+「合并 2 台」，说明共享文件夹里有同一台机器的重名快照——见上面「host 名必须稳定」。
+
+```sh
+launchctl list | grep awexport            # 第二列 0 = 上次导出成功
+tail -3 /tmp/timeplanner-aw-export.log    # exported <host>-<date>.json (active …min, N blocks)
+syncthing cli config devices list         # 应有 Windows + Mac 两个 ID
+```
 
 ## 关掉/回退
 - 停自启：删 `…\Startup\syncthing-timeplanner.vbs`（Mac：`brew services stop syncthing`）。
+- 停定时导出（Mac）：`launchctl unload ~/Library/LaunchAgents/com.timeplanner.awexport.plist`，再删 plist。
 - 停同步：Syncthing GUI 删 `timeplanner-aw` 文件夹。
 - 停合并：`.env` 里把 `TIMEPLANNER_AW_SYNC_DIR` 置空，timeplanner 立刻回到单机实时 AW。
