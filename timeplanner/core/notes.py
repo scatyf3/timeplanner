@@ -29,6 +29,11 @@ def _daily_path(date: dt.date) -> Path:
     return config.vault / folder / f"{date:%Y-%m-%d}.md"
 
 
+def daily_path(date: dt.date) -> Path:
+    """Public accessor for a day's note path (same vault convention as parsing uses)."""
+    return _daily_path(date)
+
+
 def _split_sections(text: str) -> dict[str, str]:
     """Split markdown by top-level headings into {title: body}."""
     sections: dict[str, str] = {}
@@ -98,8 +103,8 @@ def _parse_daily_text(text: str) -> dict:
     for name, body in sections.items():
         if "TODO" in name.upper():
             for raw in _numbered_or_bullet_items(body):
-                text, done = _todo_done(raw)
-                (done_todos if done else todos).append(text)
+                clean, done = _todo_done(raw)
+                (done_todos if done else todos).append(clean)
 
     unchecked, checked = [], []
     for line in text.splitlines():
@@ -120,7 +125,7 @@ def _parse_daily_text(text: str) -> dict:
                     priorities[pm.group(1).strip()] = pm.group(2).strip()
 
     takeaway = ""
-    m = re.search(r"今日\s*takeaway[^\n]*[:：]?\s*(.*?)(?:\n|$)", text)
+    m = re.search(r"今日\s*takeaway[^:：\n]*[:：]\s*(.*?)(?:\n|$)", text)
     if m:
         cand = m.group(1).strip()
         # when takeaway is empty, don't mistake the next template label (e.g. "next action before stopping…") for content
