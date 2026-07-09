@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from .core import activitywatch, backend, notes, weather
+from .core import activitywatch, aw_sync, backend, notes, weather
 from .core.gcal import BUCKET_HEX, norm_bucket
 
 SLOT_MIN = 30                     # timeline row granularity
@@ -49,7 +49,7 @@ def _collect(date: dt.date):
             for e in backend.list_events(date, "plan")]
     actual = [(e.start, e.end, _bucket_color(e.bucket), e.summary)
               for e in backend.list_events(date, "actual")]
-    obs = activitywatch.observe(date)
+    obs = aw_sync.merged_observe(date)                 # local live AW + other machines' snapshots
     observed = [(b.start, b.end, _OBSERVED_HEX, "在机")
                 for b in obs.focus_blocks] if obs.available else []
     return plan, actual, observed, obs

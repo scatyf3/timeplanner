@@ -9,10 +9,11 @@ GCal 后端待 OAuth；届时换存储后端即可，core/agent 一行不动。
 
 ## Next todo
 1. timeline write back to obsidian daily note
-2. add daily note template to current repo
-3. correctly render time record timeline in `timeplanner summary`
-4. read, parse, write cubox article to principles
+2. ~~add daily note template to current repo~~
+3. ~~correctly render time record timeline in `timeplanner summary`~~
+4. ~~read, parse, write cubox article to principles~~
 5. read local health data(apple or other opensource)
+6. sync aw via webdav
 
 ## 快速开始
 

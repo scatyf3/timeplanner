@@ -146,12 +146,12 @@ def observe(date: dt.date | None = None) -> Observed:
     )
 
 
-def summary(date: dt.date | None = None) -> str:
-    date = date or dt.date.today()
-    obs = observe(date)
-    lines = [f"# 🖥️ ActivityWatch 观测 —— {date:%Y-%m-%d}"]
-    if not obs.available:
+def format_observed(obs: Observed) -> str:
+    """Render an Observed (from local aw-server or a merged multi-host view) to text."""
+    lines = [f"# 🖥️ ActivityWatch 观测 —— {obs.date:%Y-%m-%d}"]
+    if obs.note:
         lines.append(obs.note)
+    if not obs.available:
         return "\n".join(lines)
 
     h, m = divmod(int(obs.active_minutes), 60)
@@ -167,6 +167,10 @@ def summary(date: dt.date | None = None) -> str:
             if mins >= 1:
                 lines.append(f"  - {app}: {int(mins)}min")
     return "\n".join(lines)
+
+
+def summary(date: dt.date | None = None) -> str:
+    return format_observed(observe(date or dt.date.today()))
 
 
 if __name__ == "__main__":

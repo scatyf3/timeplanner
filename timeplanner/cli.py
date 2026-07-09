@@ -16,7 +16,7 @@ import datetime as dt
 import sys
 
 from .config import config
-from .core import activitywatch, backend, cubox, gcal, memory, notes, rollover, weather
+from .core import activitywatch, aw_sync, backend, cubox, gcal, memory, notes, rollover, weather
 
 
 def _date(s: str | None) -> dt.date:
@@ -78,7 +78,7 @@ def cmd_summary(args) -> int:
         except ImportError:
             pass  # rich missing → fall back to plain text
     print(notes.summary(d))
-    print("\n" + activitywatch.summary(d))
+    print("\n" + aw_sync.summary(d))
     print("\n" + weather.summary(d))
     print("\n" + backend.summary(d, "plan"))
     print("\n" + backend.summary(d, "actual"))
@@ -140,6 +140,23 @@ def cmd_cubox(args) -> int:
     return 0
 
 
+def cmd_aw_export(args) -> int:
+    """Export this machine's local AW observation to the shared snapshot folder (for cross-machine merge)."""
+    if not config.aw_sync_dir:
+        print("（未配置 TIMEPLANNER_AW_SYNC_DIR —— 见 .env.example / README 的跨机 AW 同步）")
+        return 1
+    dates = [_date(args.date)] if args.date else [dt.date.today(), dt.date.today() - dt.timedelta(days=1)]
+    n = 0
+    for d in dates:
+        p = aw_sync.export_day(d)
+        if p:
+            print(f"📤 已导出 {d:%Y-%m-%d} 的 AW 快照 → {p.name}")
+            n += 1
+    if not n:
+        print("（本机 AW 无数据可导出，跳过）")
+    return 0
+
+
 def cmd_memory(args) -> int:
     """View / clear the planner memory cache (thoughts + candidate principles)."""
     if args.clear:
@@ -167,6 +184,9 @@ def main(argv: list[str] | None = None) -> int:
 
     cb = sub.add_parser("cubox", help="同步配置的 Cubox 文件夹到本地语料（供 agent 搜索/复盘）")
     cb.add_argument("--no-full", action="store_true", help="只拉高亮、不拉全文（更快）")
+
+    ax = sub.add_parser("aw-export", help="导出本机 AW 观测快照到共享文件夹（跨机同步，配 Syncthing）")
+    ax.add_argument("--date", help="YYYY-MM-DD，默认今天+昨天")
 
     cf = sub.add_parser("confirm", help="确认写入本地 Plan timeline")
     cf.add_argument("--date", help="YYYY-MM-DD，默认今天")
@@ -199,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
         "reflect": cmd_reflect,
         "memory": cmd_memory,
         "cubox": cmd_cubox,
+        "aw-export": cmd_aw_export,
         "confirm": cmd_confirm,
         "log": cmd_log,
     }[args.cmd](args)
