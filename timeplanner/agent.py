@@ -13,7 +13,7 @@ import datetime as dt
 import json
 
 from .config import config
-from .core import activitywatch, backend, cubox, memory, notes, timeline, weather
+from .core import activitywatch, backend, cubox, gcal, memory, notes, timeline, weather
 
 
 def load_principles() -> str:
@@ -31,6 +31,9 @@ def gather_context(date: dt.date | None = None) -> str:
         weather.summary(date),
         backend.summary(date, "plan"),
     ]
+    refs = gcal.refs_summary(date)   # subscribed calendars → external fixed constraints
+    if refs:
+        parts.append(refs)
     return "\n\n".join(parts)
 
 
@@ -92,10 +95,15 @@ def build_options():
         d = _parse_date(args.get("date"))
         return {"content": [{"type": "text", "text": weather.summary(d)}]}
 
-    @tool("timeline_read", "读当前后端当天的 ①Plan 与 ②Actual 事件", {"date": str})
+    @tool("timeline_read",
+          "读当前后端当天的 ①Plan 与 ②Actual 事件，以及订阅日历里的只读外部约束（🔒，排 plan 时避开）",
+          {"date": str})
     async def timeline_read(args):
         d = _parse_date(args.get("date"))
         text = backend.summary(d, "plan", color=False) + "\n\n" + backend.summary(d, "actual", color=False)
+        refs = gcal.refs_summary(d, color=False)   # subscribed calendars → external constraints
+        if refs:
+            text += "\n\n" + refs
         return {"content": [{"type": "text", "text": text}]}
 
     @tool("stage_plan",

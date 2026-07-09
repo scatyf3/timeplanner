@@ -82,6 +82,9 @@ def cmd_summary(args) -> int:
     print("\n" + weather.summary(d))
     print("\n" + backend.summary(d, "plan"))
     print("\n" + backend.summary(d, "actual"))
+    refs = gcal.refs_summary(d)
+    if refs:
+        print("\n" + refs)
     return 0
 
 
@@ -157,6 +160,32 @@ def cmd_aw_export(args) -> int:
     return 0
 
 
+def cmd_calendars(args) -> int:
+    """List every calendar in the Google account, so you can pick IDs for TIMEPLANNER_GCAL_REFS."""
+    if not gcal.is_configured():
+        print("⚠️  未配置 Google OAuth —— 见 README（GCAL_CREDENTIALS）。")
+        return 1
+    try:
+        cals = gcal.list_calendars()
+    except gcal.GCalNotConfigured as e:
+        print(f"⚠️  {e}")
+        return 1
+    except Exception as e:  # noqa: BLE001 — network/auth errors shouldn't traceback
+        print(f"⚠️  读日历列表出错：{e}")
+        return 1
+    refs = set(config.gcal_ref_ids)
+    print(f"📚 账号里的日历（共 {len(cals)} 个）。把想只读的日历 ID 填进 .env 的 TIMEPLANNER_GCAL_REFS：\n")
+    for c in cals:
+        flags = []
+        if c["primary"]:
+            flags.append("primary")
+        if c["id"] in refs:
+            flags.append("✓ 已在 refs")
+        tail = f"  [{', '.join(flags)}]" if flags else ""
+        print(f"  • {c['name']}  ({c['access']}){tail}\n    {c['id']}")
+    return 0
+
+
 def cmd_memory(args) -> int:
     """View / clear the planner memory cache (thoughts + candidate principles)."""
     if args.clear:
@@ -187,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
 
     ax = sub.add_parser("aw-export", help="导出本机 AW 观测快照到共享文件夹（跨机同步，配 Syncthing）")
     ax.add_argument("--date", help="YYYY-MM-DD，默认今天+昨天")
+
+    sub.add_parser("calendars", help="列出账号里所有日历的 ID（用于填 TIMEPLANNER_GCAL_REFS）")
 
     cf = sub.add_parser("confirm", help="确认写入本地 Plan timeline")
     cf.add_argument("--date", help="YYYY-MM-DD，默认今天")
@@ -220,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         "memory": cmd_memory,
         "cubox": cmd_cubox,
         "aw-export": cmd_aw_export,
+        "calendars": cmd_calendars,
         "confirm": cmd_confirm,
         "log": cmd_log,
     }[args.cmd](args)

@@ -79,11 +79,13 @@ class Event:
     bucket: str = ""          # empty = external event
     event_id: str = ""
     external: bool = False    # no timeplanner marker → True
+    all_day: bool = False     # all-day event (holiday/birthday) → informational, not a time block
 
     def line(self, color: bool | None = None) -> str:
         tag = f"[{self.bucket or 'ext'}]"
         lock = "🔒" if self.external else "  "
-        text = f"{lock} {self.start:%H:%M}–{self.end:%H:%M} {tag} {self.summary}"
+        when = "全天" if self.all_day else f"{self.start:%H:%M}–{self.end:%H:%M}"
+        text = f"{lock} {when} {tag} {self.summary}"
         if color is None:
             color = _use_color()
         code = _BUCKET_ANSI.get(self.bucket) if (color and self.bucket) else None
@@ -125,6 +127,10 @@ def _parse_dt(node: dict) -> dt.datetime:
     return dt.datetime.fromisoformat(raw)
 
 
+def _is_all_day(item: dict) -> bool:
+    return "date" in item.get("start", {}) and "dateTime" not in item.get("start", {})
+
+
 def _to_event(item: dict) -> Event:
     priv = (item.get("extendedProperties", {}) or {}).get("private", {}) or {}
     is_ours = priv.get(MARKER_KEY) == "1"
@@ -135,6 +141,7 @@ def _to_event(item: dict) -> Event:
         bucket=priv.get("bucket", "") if is_ours else "",
         event_id=item.get("id", ""),
         external=not is_ours,
+        all_day=_is_all_day(item),
     )
 
 
@@ -162,6 +169,88 @@ def list_events(date: dt.date | None = None, which: str = "plan") -> list[Event]
         orderBy="startTime",
     ).execute()
     return [_to_event(it) for it in resp.get("items", [])]
+
+
+def list_calendars() -> list[dict]:
+    """List every calendar in the account's calendarList (id / name / primary / accessRole).
+
+    Use this to discover the calendar IDs to put in TIMEPLANNER_GCAL_REFS.
+    """
+    svc = _service()
+    resp = svc.calendarList().list().execute()
+    out = []
+    for it in resp.get("items", []):
+        out.append({
+            "id": it.get("id", ""),
+            "name": it.get("summaryOverride") or it.get("summary", ""),
+            "primary": bool(it.get("primary", False)),
+            "access": it.get("accessRole", ""),
+        })
+    return out
+
+
+def _events_on(svc, cal_id: str, date: dt.date) -> list[dict]:
+    start = dt.datetime.combine(date, dt.time.min).astimezone()
+    end = start + dt.timedelta(days=1)
+    resp = svc.events().list(
+        calendarId=cal_id,
+        timeMin=start.isoformat(),
+        timeMax=end.isoformat(),
+        singleEvents=True,
+        orderBy="startTime",
+    ).execute()
+    return resp.get("items", [])
+
+
+def list_ref_events(date: dt.date | None = None) -> list[Event]:
+    """Read a day's events from all subscribed reference calendars (config.gcal_ref_ids).
+
+    All are treated as external fixed constraints (🔒, read-only), regardless of any marker,
+    sorted by start time. Returns [] when no ref calendars are configured. A single bad
+    calendar ID is skipped (not fatal) so one broken ref never hides the others.
+    """
+    if not config.gcal_ref_ids:
+        return []
+    date = date or dt.date.today()
+    svc = _service()
+    out: list[Event] = []
+    for cal_id in config.gcal_ref_ids:
+        try:
+            for it in _events_on(svc, cal_id, date):
+                e = _to_event(it)
+                e.bucket = ""          # subscribed calendars are never planner-owned
+                e.external = True
+                out.append(e)
+        except Exception:  # noqa: BLE001 — a wrong/inaccessible ref id shouldn't sink the rest
+            continue
+    out.sort(key=lambda e: (e.all_day is False, e.start))  # all-day first, then by start
+    return out
+
+
+def refs_summary(date: dt.date | None = None, color: bool | None = None) -> str:
+    """Read-only text summary of the subscribed reference calendars (external constraints)."""
+    date = date or dt.date.today()
+    lines = [f"# 🔒 订阅日历（只读外部约束）—— {date:%Y-%m-%d}"]
+    if not config.gcal_ref_ids:
+        return ""  # feature off → contribute nothing to the summary
+    if not is_configured():
+        lines.append("（配了订阅日历，但未配置 Google OAuth —— 见 README。）")
+        return "\n".join(lines)
+    try:
+        events = list_ref_events(date)
+    except GCalNotConfigured as e:
+        lines.append(f"（{e}）")
+        return "\n".join(lines)
+    except Exception as e:  # noqa: BLE001 — network/auth errors must never crash the CLI
+        lines.append(f"（读订阅日历出错：{e}）")
+        return "\n".join(lines)
+    if not events:
+        lines.append(f"（{len(config.gcal_ref_ids)} 个订阅日历今天无事件）")
+        return "\n".join(lines)
+    lines.append(f"来自 {len(config.gcal_ref_ids)} 个订阅日历的 {len(events)} 个事件（planner 只在其空隙排块）：")
+    for e in events:
+        lines.append(e.line(color))
+    return "\n".join(lines)
 
 
 def _insert(svc, cal: str, e: Event) -> None:

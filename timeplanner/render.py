@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from .core import activitywatch, aw_sync, backend, notes, weather
+from .core import activitywatch, aw_sync, backend, gcal, notes, weather
 from .core.gcal import BUCKET_HEX, norm_bucket
 
 SLOT_MIN = 30                     # timeline row granularity
@@ -124,6 +124,26 @@ def _aw_breakdown(obs):
     return Group(*rows)
 
 
+def _refs_section(date: dt.date):
+    """A compact 🔒 list of subscribed-calendar events (external constraints). None if off/empty."""
+    from .config import config
+    if not config.gcal_ref_ids or not gcal.is_configured():
+        return None
+    from rich.console import Group
+    from rich.text import Text
+    try:
+        events = gcal.list_ref_events(date)
+    except Exception:  # noqa: BLE001 — never let a calendar hiccup break the whole summary
+        return None
+    if not events:
+        return None
+    rows = [Text.assemble(("🔒 订阅日历", "bold"), ("（只读外部约束，planner 只在空隙排块）", "dim"))]
+    for e in events:
+        when = "全天" if e.all_day else f"{e.start:%H:%M}–{e.end:%H:%M}"
+        rows.append(Text.assemble((f"  {when}  ", "dim"), (_short(e.summary, 40), _OBSERVED_HEX)))
+    return Group(*rows)
+
+
 def render(date: dt.date) -> None:
     """Pretty terminal summary. Raises ImportError if rich is unavailable (caller falls back to plain)."""
     from rich.console import Console
@@ -139,3 +159,7 @@ def render(date: dt.date) -> None:
     console.print(Rule(style="dim"))
     console.print(_timeline_table(date, plan, actual, observed))
     console.print(_aw_breakdown(obs))
+    refs = _refs_section(date)
+    if refs is not None:
+        console.print(Rule(style="dim"))
+        console.print(refs)

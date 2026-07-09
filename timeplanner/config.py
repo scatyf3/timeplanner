@@ -48,6 +48,11 @@ class Config:
         default_factory=lambda: str(_repo_path(_get("GCAL_TOKEN", "token.json"))))
     gcal_plan_id: str = field(default_factory=lambda: _get("GCAL_PLAN_ID"))
     gcal_actual_id: str = field(default_factory=lambda: _get("GCAL_ACTUAL_ID"))
+    # subscribed (read-only reference) calendars in the same account: comma-separated
+    # calendar IDs. Their events are surfaced as external fixed constraints (🔒), never
+    # written to. Discover IDs with `timeplanner calendars`.
+    gcal_ref_ids: list[str] = field(default_factory=lambda: [
+        s.strip() for s in _get("TIMEPLANNER_GCAL_REFS", "").split(",") if s.strip()])
 
     # storage backend: local (local data/*.json) | gcal (real calendar)
     backend: str = field(default_factory=lambda: _get("TIMEPLANNER_BACKEND", "local"))
