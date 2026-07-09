@@ -20,6 +20,25 @@
  "focus_blocks":[["<iso>","<iso>"]],"top_apps":[["app",min]],"exported_at":"<iso>"}
 ```
 
+## ⚠️ host 名必须稳定
+
+合并按 `<host>-<date>.json` 认机器，`merged_observe()` 靠 `host` 跳过「自己那份」（本机走实时 AW）。
+所以 **host 名一变，同一台机器同一天就会留下两份快照，合并时把自己加两遍**。
+
+`socket.gethostname()` 在 DHCP 派生主机名的网络里就是不稳定的 —— NYU wireless 上这台 Mac 报
+`10-20-89-245.dynapool.wireless.nyu.edu`，随 IP 变。实测：真实 137min 被合并成 273min，
+`summary` 还会显示「合并 2 台」而其实只有一台。
+
+因此每台同步的机器都要显式钉住名字：
+
+- timeplanner 端：`.env` 里 `TIMEPLANNER_AW_HOST_NAME="JuanitadeMacBook-Air"`
+- 裸脚本端：`scripts/aw_export.py --host JuanitadeMacBook-Air`（或 `AW_HOST_NAME` 环境变量）
+
+两边必须**用同一个值**，否则汇集端认不出「自己那份」。名字会被 slug 化（非 `[A-Za-z0-9_.]` → `-`）。
+
+> 改过某台机器的 host 名？去共享文件夹把它**旧名字的快照删掉**——钉名字只防新文件，
+> 已经落盘的旧快照仍会被当成另一台机器加进来。
+
 ---
 
 ## 本机 Windows（汇集端）— 已完成
@@ -36,44 +55,56 @@
 
 ---
 
-## macOS（记录端）— 待办
+## macOS（记录端）— 进行中
 
-### 1. ActivityWatch
-确保已装并在跑（菜单栏有图标）。没装：`brew install --cask activitywatch` 或 https://activitywatch.net 。
+- 设备 ID：`6ZIQFEW-U6L6P7L-AQHPICM-V25V7DL-5SQA3GP-LNSIZZ4-YGB5D63-5HJNUA3`
+- 稳定 host 名：`JuanitadeMacBook-Air`（取自 `scutil --get LocalHostName`）
+- 共享文件夹本地路径：`~/ActivityWatchSync`
 
-### 2. Syncthing
+### 1. ActivityWatch — ✅ 已在跑
+`curl -s localhost:5600/api/0/info` 有响应即可（本机 v0.13.2）。
+
+### 2. Syncthing — ✅ 已装并自启
 ```sh
-brew install syncthing
-brew services start syncthing          # 开机自启
-open http://127.0.0.1:8384             # GUI
-```
-拿到本机设备 ID：GUI 右上「Actions → Show ID」，或 `syncthing --device-id`。
-
-### 3. 配对（把 Windows 和 Mac 连起来）
-两种方式二选一：
-
-**A. 让我从 Windows 侧配（省事）**：把 Mac 的设备 ID 发我，我用 Windows 的 Syncthing API 把 Mac 加为远程设备并共享 `timeplanner-aw` 文件夹。然后你在 Mac GUI 上点「接受」，把该文件夹的本地路径设成 `~/ActivityWatchSync`。
-
-**B. 全在 GUI 手点**：
-1. Windows GUI「Add Remote Device」→ 粘贴 Mac 的设备 ID → Save。
-2. Mac GUI 会弹出「新设备」→ 接受，粘贴 Windows 设备 ID。
-3. Windows GUI 里编辑 `timeplanner-aw` 文件夹 →「Sharing」勾上 Mac → Save。
-4. Mac GUI 弹「新文件夹 timeplanner-aw」→ 接受，路径设 `~/ActivityWatchSync`（**Folder ID 必须是 `timeplanner-aw`**）。
-
-### 4. 部署导出脚本
-把 `scripts/aw_export.py` 拷到 Mac（零依赖，系统 python3 即可）。先手动验证：
-```sh
-python3 aw_export.py --sync-dir ~/ActivityWatchSync
-# 应输出：exported <mac-host>-<date>.json (active …min, N blocks)
+brew install --formula syncthing        # 注意 --formula：`syncthing` 同时是 cask 名
+brew services start syncthing           # 开机自启
+open http://127.0.0.1:8384              # GUI
+syncthing cli show system               # 里面的 myID 就是设备 ID（新版没有 --device-id）
 ```
 
-### 5. 定时导出（每 10 分钟）
-**cron**（最简单）：`crontab -e` 加一行——
+### 3. `.env` — ✅ 已配
+```ini
+TIMEPLANNER_AW_SYNC_DIR="/Users/juanitahowe/ActivityWatchSync"
+TIMEPLANNER_AW_HOST_NAME="JuanitadeMacBook-Air"     # 见上面「host 名必须稳定」
+```
+验证导出与合并：
+```sh
+timeplanner aw-export      # → 📤 已导出 … JuanitadeMacBook-Air-<date>.json
+timeplanner summary        # ③ AW 分钟数应等于本机实时 AW，且 note 不出现「合并 2 台」
+```
+
+### 4. 配对（把 Windows 和 Mac 连起来）— ⬜ 待办
+Mac 侧加 Windows 为远程设备，并接受共享文件夹：
+```sh
+syncthing cli config devices add \
+  --device-id UAAIR6J-VG5U7QW-7K2PMIJ-2O35VVZ-G32HAPX-UVQ7KUA-P25L26N-N2OWPAB \
+  --name windows-collector
+```
+然后 **Windows GUI** 里「Add Remote Device」粘贴 Mac 的设备 ID（见上），
+编辑 `timeplanner-aw` 文件夹 →「Sharing」勾上 Mac → Save；
+Mac GUI 弹「新文件夹」→ 接受，路径设 `~/ActivityWatchSync`（**Folder ID 必须是 `timeplanner-aw`**）。
+
+### 5. 定时导出（每 10 分钟）— ⬜ 待办
+`~/Library/LaunchAgents/com.timeplanner.awexport.plist`，`StartInterval` = 600，
+`ProgramArguments` = `/usr/bin/python3 <repo>/scripts/aw_export.py --sync-dir ~/ActivityWatchSync
+--host JuanitadeMacBook-Air`（**`--host` 别漏**，否则快照名跟着 IP 变）。然后：
+```sh
+launchctl load ~/Library/LaunchAgents/com.timeplanner.awexport.plist
+```
+或用 cron：
 ```cron
-*/10 * * * * /usr/bin/python3 /Users/<you>/aw_export.py --sync-dir /Users/<you>/ActivityWatchSync >> /tmp/aw_export.log 2>&1
+*/10 * * * * /usr/bin/python3 <repo>/scripts/aw_export.py --sync-dir ~/ActivityWatchSync --host JuanitadeMacBook-Air >> /tmp/aw_export.log 2>&1
 ```
-**launchd**（更 mac 原生）：`~/Library/LaunchAgents/com.timeplanner.awexport.plist`，`ProgramArguments` 指向
-`python3 aw_export.py --sync-dir ~/ActivityWatchSync`，`StartInterval` = 600，然后 `launchctl load`。
 
 ---
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import socket
 from collections import defaultdict
 
@@ -31,12 +32,23 @@ from .activitywatch import FocusBlock, Observed
 SCHEMA = 1
 
 
+def slug(host: str) -> str:
+    """Filename-safe host token. Keeps `<host>-<date>.json` parseable and path-injection free."""
+    return re.sub(r"[^A-Za-z0-9_.]+", "-", host).strip("-.") or "unknown"
+
+
 def local_host() -> str:
-    return socket.gethostname()
+    """This machine's stable snapshot identity.
+
+    Prefers TIMEPLANNER_AW_HOST_NAME: socket.gethostname() is DHCP-derived on some networks and
+    changes with the IP, which would strand a stale snapshot under the old name — merged_observe
+    would then add it on top of this host's live AW data.
+    """
+    return slug(config.aw_host_name or socket.gethostname())
 
 
 def _snap_path(host: str, date: dt.date):
-    return config.aw_sync_dir / f"{host}-{date:%Y-%m-%d}.json"
+    return config.aw_sync_dir / f"{slug(host)}-{date:%Y-%m-%d}.json"
 
 
 def export_day(date: dt.date | None = None) -> "object | None":
@@ -96,9 +108,10 @@ def merged_observe(date: dt.date | None = None) -> Observed:
     hosts: list[str] = [host] if local.available else []
 
     for snap in load_snapshots(date):
-        if snap.get("host") == host:                     # local host already covered by live data
+        snap_host = slug(str(snap.get("host", "?")))
+        if snap_host == host:                            # local host already covered by live data
             continue
-        hosts.append(snap.get("host", "?"))
+        hosts.append(snap_host)
         active += float(snap.get("active_minutes", 0))
         for s, e in snap.get("focus_blocks", []):
             try:

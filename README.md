@@ -13,7 +13,7 @@ GCal 后端待 OAuth；届时换存储后端即可，core/agent 一行不动。
 3. ~~correctly render time record timeline in `timeplanner summary`~~
 4. ~~read, parse, write cubox article to principles~~
 5. read local health data(apple or other opensource)
-6. sync aw via webdav
+6. ~~sync aw via webdav~~（改用 Syncthing 共享每日快照，见 [docs/aw-sync-setup.md](docs/aw-sync-setup.md)）
 
 ## 快速开始
 
@@ -34,6 +34,7 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 | `timeplanner doctor` | 环境自检（库、AW、天气、GCal、SDK） | — |
 | `timeplanner summary [--date]` | 四个只读信号汇总 + 订阅日历约束（零 agent、零写入） | — |
 | `timeplanner calendars` | 列出账号里所有日历的 ID（填 `TIMEPLANNER_GCAL_REFS` 用） | GCal OAuth |
+| `timeplanner aw-export` | 导出本机 AW 当日快照到共享文件夹（跨机合并③观测线） | `TIMEPLANNER_AW_SYNC_DIR` |
 | `timeplanner plan [--date]` | 出今日 plan 草案 → stage 到待确认区 | Agent SDK |
 | `timeplanner confirm [--date] [--yes]` | 辅助式闸门：预览 diff / `--yes` 写进本地 Plan timeline | — |
 | `timeplanner log START END BUCKET SUMMARY...` | 录一条 Actual 事件（②自报层） | — |

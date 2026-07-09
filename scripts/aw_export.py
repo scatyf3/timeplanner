@@ -12,6 +12,11 @@ Usage:
     AW_SYNC_DIR=~/ActivityWatchSync python3 aw_export.py            # today + yesterday
     python3 aw_export.py --sync-dir ~/ActivityWatchSync --date 2026-07-08
     python3 aw_export.py --sync-dir ~/ActivityWatchSync --aw-host http://localhost:5600
+    python3 aw_export.py --sync-dir ~/ActivityWatchSync --host my-macbook
+
+Pass --host (or set AW_HOST_NAME) wherever socket.gethostname() isn't stable — on DHCP-derived
+names like `10-20-89-245.dynapool…` it changes with the IP, stranding a stale snapshot under the
+old name that the collector would then add on top of this machine's real data.
 
 Put it on a schedule (every ~5-10 min) via launchd (macOS) / cron / Task Scheduler.
 """
@@ -22,6 +27,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import socket
 import urllib.parse
 import urllib.request
@@ -32,6 +38,11 @@ SCHEMA = 1
 MERGE_GAP_S = 300        # join not-afk spans less than this apart into one focus block
 MIN_BLOCK_MIN = 25       # a focus block counts only if >= this long
 TIMEOUT = 5
+
+
+def slug(host: str) -> str:
+    """Filename-safe host token. Must match timeplanner/core/aw_sync.py:slug()."""
+    return re.sub(r"[^A-Za-z0-9_.]+", "-", host).strip("-.") or "unknown"
 
 
 def _get(host: str, path: str):
@@ -83,7 +94,7 @@ def _merge_notafk(afk_events):
     return active_s / 60, blocks
 
 
-def export_day(sync_dir: Path, aw_host: str, date: dt.date) -> Path | None:
+def export_day(sync_dir: Path, aw_host: str, date: dt.date, host: str) -> Path | None:
     start, end = _day_range(date)
     try:
         buckets = _get(aw_host, "/api/0/buckets/")
@@ -104,7 +115,6 @@ def export_day(sync_dir: Path, aw_host: str, date: dt.date) -> Path | None:
         print(f"  {date}: no AW data, skip")
         return None
 
-    host = socket.gethostname()
     snap = {
         "schema": SCHEMA,
         "host": host,
@@ -128,17 +138,21 @@ def main():
     ap.add_argument("--sync-dir", default=os.environ.get("AW_SYNC_DIR") or os.environ.get("TIMEPLANNER_AW_SYNC_DIR"),
                     help="shared snapshot folder (or set AW_SYNC_DIR)")
     ap.add_argument("--aw-host", default=os.environ.get("AW_HOST", "http://localhost:5600"))
+    ap.add_argument("--host", default=os.environ.get("AW_HOST_NAME") or os.environ.get("TIMEPLANNER_AW_HOST_NAME"),
+                    help="stable name for this machine (default: socket.gethostname(), "
+                         "which is unstable on DHCP-derived hostnames)")
     ap.add_argument("--date", help="YYYY-MM-DD (default: today + yesterday)")
     args = ap.parse_args()
     if not args.sync_dir:
         ap.error("no sync dir: pass --sync-dir or set AW_SYNC_DIR")
 
     sync_dir = Path(args.sync_dir).expanduser()
+    host = slug(args.host or socket.gethostname())
     dates = [dt.date.fromisoformat(args.date)] if args.date else \
         [dt.date.today(), dt.date.today() - dt.timedelta(days=1)]
-    print(f"aw-export → {sync_dir}  (host={socket.gethostname()})")
+    print(f"aw-export → {sync_dir}  (host={host})")
     for d in dates:
-        export_day(sync_dir, args.aw_host, d)
+        export_day(sync_dir, args.aw_host, d, host)
 
 
 if __name__ == "__main__":

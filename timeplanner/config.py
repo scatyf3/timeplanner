@@ -37,6 +37,11 @@ class Config:
     # (<host>-<date>.json). Empty = single-machine, feature off. See core/aw_sync.py.
     aw_sync_dir: Path | None = field(default_factory=lambda: (
         Path(_get("TIMEPLANNER_AW_SYNC_DIR")).expanduser() if _get("TIMEPLANNER_AW_SYNC_DIR") else None))
+    # Stable identity for this machine's snapshots. socket.gethostname() is DHCP-derived on some
+    # networks (e.g. `10-20-89-245.dynapool…`), so it changes with the IP — which would write a
+    # second snapshot per day per name and make the merge double-count. Set this on every synced
+    # machine, and pass the same value to scripts/aw_export.py --host.
+    aw_host_name: str = field(default_factory=lambda: _get("TIMEPLANNER_AW_HOST_NAME"))
 
     lat: float = field(default_factory=lambda: float(_get("TIMEPLANNER_LAT", "40.7291")))
     lon: float = field(default_factory=lambda: float(_get("TIMEPLANNER_LON", "-73.9965")))
