@@ -109,7 +109,9 @@ def merged_observe(date: dt.date | None = None) -> Observed:
             app_min[a] += float(m)
 
     blocks.sort(key=lambda b: b.start)
-    top_apps = sorted(app_min.items(), key=lambda x: -x[1])[:8]
+    # filter here too: snapshots carry raw app names, so drop ignored ones after merging
+    top_apps = sorted(((a, m) for a, m in app_min.items() if not activitywatch.ignored_app(a)),
+                      key=lambda x: -x[1])[:8]
     note = ""
     if len(hosts) > 1:
         note = f"（合并 {len(hosts)} 台：{', '.join(hosts)}）"

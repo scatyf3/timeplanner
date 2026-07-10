@@ -37,6 +37,10 @@ class Config:
     # (<host>-<date>.json). Empty = single-machine, feature off. See core/aw_sync.py.
     aw_sync_dir: Path | None = field(default_factory=lambda: (
         Path(_get("TIMEPLANNER_AW_SYNC_DIR")).expanduser() if _get("TIMEPLANNER_AW_SYNC_DIR") else None))
+    # app names to drop from the AW breakdown (noise like the macOS lock screen). Comma-separated,
+    # case-insensitive. Applied on the timeplanner side, so snapshots stay faithful.
+    aw_ignore_apps: set = field(default_factory=lambda: {
+        s.strip().lower() for s in _get("TIMEPLANNER_AW_IGNORE_APPS", "loginwindow").split(",") if s.strip()})
 
     lat: float = field(default_factory=lambda: float(_get("TIMEPLANNER_LAT", "40.7291")))
     lon: float = field(default_factory=lambda: float(_get("TIMEPLANNER_LON", "-73.9965")))

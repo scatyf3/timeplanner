@@ -18,6 +18,11 @@ from ..config import config
 TIMEOUT = 5
 
 
+def ignored_app(app: str) -> bool:
+    """Whether an app should be dropped from the AW breakdown (config.aw_ignore_apps, case-insensitive)."""
+    return app.strip().lower() in config.aw_ignore_apps
+
+
 def _day_range(date: dt.date) -> tuple[str, str]:
     """ISO strings for the local full day [00:00, next-day 00:00) (with local tz offset)."""
     start = dt.datetime.combine(date, dt.time.min).astimezone()
@@ -133,7 +138,7 @@ def observe(date: dt.date | None = None) -> Observed:
         app_min[d.get("app", "?")] += dur
         title_min[d.get("title", "?")] += dur
 
-    top_apps = sorted(app_min.items(), key=lambda x: -x[1])[:8]
+    top_apps = sorted(((a, m) for a, m in app_min.items() if not ignored_app(a)), key=lambda x: -x[1])[:8]
     top_titles = sorted(title_min.items(), key=lambda x: -x[1])[:8]
 
     return Observed(
