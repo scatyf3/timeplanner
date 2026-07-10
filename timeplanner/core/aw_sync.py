@@ -30,6 +30,37 @@ from .activitywatch import FocusBlock, Observed
 
 SCHEMA = 1
 
+# Win↔Mac app-name mapping. Dropping `.exe` + case-folding (activitywatch.app_key) already
+# merges most pairs (Code.exe↔Code, vivaldi.exe↔Vivaldi, Discord.exe↔Discord). This table
+# covers the ones whose names differ beyond that; keys are app_key form, value is the display.
+_APP_ALIAS = {
+    "wechat": "微信", "weixin": "微信", "微信": "微信",
+    "chrome": "Chrome", "google chrome": "Chrome",
+    "msedge": "Edge", "microsoft edge": "Edge",
+    "windowsterminal": "Terminal", "terminal": "Terminal",
+    "code - insiders": "Code",
+}
+
+
+def _canonical_app(name: str) -> tuple[str, str]:
+    """(merge key, display name) for an app, unifying Win/Mac variants."""
+    key = activitywatch.app_key(name)          # strip .exe + lower
+    if key in _APP_ALIAS:
+        disp = _APP_ALIAS[key]
+        return activitywatch.app_key(disp), disp
+    s = name.strip()
+    if s.lower().endswith(".exe"):
+        s = s[:-4]
+    return key, s
+
+
+def _nicer(cur: str | None, new: str) -> str:
+    """Pick the better display among variants sharing a key: prefer one with caps/non-ascii over all-lowercase."""
+    if cur is None:
+        return new
+    cased = lambda x: any(c.isupper() for c in x) or any(ord(c) > 127 for c in x)  # noqa: E731
+    return new if (cased(new) and not cased(cur)) else cur
+
 
 def local_host() -> str:
     return socket.gethostname()
@@ -90,10 +121,17 @@ def merged_observe(date: dt.date | None = None) -> Observed:
 
     blocks: list[FocusBlock] = list(local.focus_blocks)
     active = local.active_minutes if local.available else 0.0
-    app_min: dict[str, float] = defaultdict(float)
-    for a, m in local.top_apps:
-        app_min[a] += m
+    app_min: dict[str, float] = defaultdict(float)   # canonical key -> minutes
+    app_disp: dict[str, str] = {}                    # canonical key -> display name
     hosts: list[str] = [host] if local.available else []
+
+    def _add_app(name: str, mins: float) -> None:
+        key, disp = _canonical_app(name)             # merge Win/Mac variants of the same app
+        app_min[key] += mins
+        app_disp[key] = _nicer(app_disp.get(key), disp)
+
+    for a, m in local.top_apps:
+        _add_app(a, m)
 
     for snap in load_snapshots(date):
         if snap.get("host") == host:                     # local host already covered by live data
@@ -106,11 +144,11 @@ def merged_observe(date: dt.date | None = None) -> Observed:
             except ValueError:
                 continue
         for a, m in snap.get("top_apps", []):
-            app_min[a] += float(m)
+            _add_app(a, float(m))
 
     blocks.sort(key=lambda b: b.start)
-    # filter here too: snapshots carry raw app names, so drop ignored ones after merging
-    top_apps = sorted(((a, m) for a, m in app_min.items() if not activitywatch.ignored_app(a)),
+    # Win/Mac variants merged by canonical key; ignored apps dropped
+    top_apps = sorted(((app_disp[k], m) for k, m in app_min.items() if not activitywatch.ignored_app(k)),
                       key=lambda x: -x[1])[:8]
     note = ""
     if len(hosts) > 1:

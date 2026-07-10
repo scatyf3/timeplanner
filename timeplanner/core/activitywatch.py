@@ -18,9 +18,17 @@ from ..config import config
 TIMEOUT = 5
 
 
+def app_key(app: str) -> str:
+    """Canonical merge key for an app name: drop a trailing .exe, lowercase (so Win/Mac variants match)."""
+    s = app.strip()
+    if s.lower().endswith(".exe"):
+        s = s[:-4]
+    return s.lower()
+
+
 def ignored_app(app: str) -> bool:
-    """Whether an app should be dropped from the AW breakdown (config.aw_ignore_apps, case-insensitive)."""
-    return app.strip().lower() in config.aw_ignore_apps
+    """Whether an app should be dropped from the AW breakdown (config.aw_ignore_apps; .exe/case-insensitive)."""
+    return app_key(app) in {app_key(x) for x in config.aw_ignore_apps}
 
 
 def _day_range(date: dt.date) -> tuple[str, str]:
