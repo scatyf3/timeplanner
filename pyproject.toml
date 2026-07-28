@@ -15,6 +15,8 @@ dependencies = [
 [project.optional-dependencies]
 # agent loop 走订阅额度（Claude Agent SDK）。只读 summary 不需要它。
 agent = ["claude-agent-sdk>=0.1.0"]
+# 交互式终端仪表盘（`timeplanner tui`）。Textual 基于 rich，只读 summary 不需要它。
+tui = ["textual>=0.60"]
 
 [project.scripts]
 timeplanner = "timeplanner.cli:main"

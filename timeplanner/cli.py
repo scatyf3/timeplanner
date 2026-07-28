@@ -130,6 +130,93 @@ def cmd_reflect(args) -> int:
     return 0
 
 
+def cmd_weekly(args) -> int:
+    """Weekly review: aggregate the week's Time-record time into projects (agent), preview a write-back to the Weekly note."""
+    from . import agent
+    from .core import weekly
+    d = weekly.target_week(args.date)
+    mon, sun = weekly.week_bounds(d)
+    iso = d.isocalendar()
+    if not args.plain:
+        try:
+            from . import render
+            render.render_weekly(d)
+        except ImportError:
+            pass  # rich missing → skip the bucket-hours chart, agent narration still runs
+    mem = memory.context_block()
+    prompt = (f"本周回顾：{iso.year}-W{iso.week:02d}（{mon:%Y-%m-%d} 周一 ~ {sun:%Y-%m-%d} 周日）。{_now_hint(dt.date.today())}"
+              f"请先调用 weekly_context（date 传 {mon:%Y-%m-%d}）读这一周的 Time record 时间/项目名册/完成情况，"
+              "把时间按名册归到各 project，逐项目给『X 小时 — 这周做了啥』，"
+              f"然后调用 stage_weekly（date 同样传 {mon:%Y-%m-%d}）暂存，提示我跑 `timeplanner confirm-weekly` 落地。")
+    if mem:
+        prompt += f"\n\n{mem}"
+
+    def _show_allocation():
+        """After each round, echo the freshly re-staged per-project allocation (agent re-stages when you nudge it)."""
+        try:
+            from . import render
+            render.render_weekly_allocation(d)
+        except ImportError:
+            body = weekly.staged(d)
+            if body:
+                print("\n📊 当前项目时间分配（已暂存，最新一轮）：\n" + body)
+
+    asyncio.run(agent.run_interactive(
+        prompt,
+        on_round=_show_allocation,
+        input_hint="\n💬 补充/调整后再排一轮（直接回车结束；结束后 tp confirm-weekly 落地）> ",
+        closing="（已结束。最新汇总已 stage —— 跑 `timeplanner confirm-weekly` 预览、`--yes` 落地。）",
+    ))
+    return 0
+
+
+def cmd_confirm_weekly(args) -> int:
+    """Assisted gate: write the staged weekly rollup into the Obsidian Weekly note. Defaults to dry-run, --yes commits."""
+    from .core import weekly
+    d = weekly.target_week(args.date)
+    pending = [(k, weekly.staged(d, k)) for k in weekly.KINDS]
+    pending = [(k, b) for k, b in pending if b]
+    if not pending:
+        iso = d.isocalendar()
+        print(f"（{iso.year}-W{iso.week:02d} 没有待确认的周汇总；先跑 `timeplanner weekly`。）")
+        return 1
+    for k, b in pending:            # review first, then insights (append order → review above insights)
+        print(weekly.write_back(d, b, dry_run=not args.yes, kind=k))
+        if args.yes:
+            weekly.clear_staged(d, k)
+    return 0
+
+
+def cmd_reclassify(args) -> int:
+    """Re-bucket our own logged Actual events by keyword-classifying their summaries. Defaults to dry-run."""
+    d = _date(args.date)
+    print(backend.reclassify(d, dry_run=not args.yes))
+    return 0
+
+
+def cmd_tui(args) -> int:
+    """Launch the interactive day dashboard (read-only). Textual is a soft dependency."""
+    d = _date(args.date)
+    try:
+        from . import tui
+    except ImportError:
+        print("⚠️ 未安装 Textual。装它才能跑仪表盘：\n    pip install -e '.[tui]'\n"
+              "（只读汇总用 `timeplanner summary`，不需要它。）")
+        return 1
+    tui.run(d)
+    return 0
+
+
+def cmd_observations(args) -> int:
+    """View or keyword-search the observation library (accumulated distilled observations)."""
+    from .core import observations
+    if args.search:
+        print(observations.search_summary(" ".join(args.search)))
+    else:
+        print(observations.render())
+    return 0
+
+
 def cmd_cubox(args) -> int:
     """Sync the configured Cubox folders into the local corpus (agent search/reflect material)."""
     full = not args.no_full
@@ -182,6 +269,16 @@ def main(argv: list[str] | None = None) -> int:
     mp = sub.add_parser("memory", help="planner 记忆缓存（思考 + 候选原则）")
     mp.add_argument("--clear", action="store_true", help="清空记忆")
 
+    ob = sub.add_parser("observations", help="看/搜 observation 库（累积的提炼观察）")
+    ob.add_argument("--search", nargs="+", help="按关键词召回（空格分词）")
+
+    tp = sub.add_parser("tui", help="交互式终端仪表盘（timeline + 时间占比 + 实时时钟 + 记活动）")
+    tp.add_argument("--date", help="YYYY-MM-DD，默认今天")
+
+    rc = sub.add_parser("reclassify", help="按描述重判 bucket、给记过的 Actual 事件重新上色")
+    rc.add_argument("--date", help="YYYY-MM-DD，默认今天")
+    rc.add_argument("--yes", action="store_true", help="真改（默认 dry-run 只预览）")
+
     cb = sub.add_parser("cubox", help="同步配置的 Cubox 文件夹到本地语料（供 agent 搜索/复盘）")
     cb.add_argument("--no-full", action="store_true", help="只拉高亮、不拉全文（更快）")
 
@@ -191,6 +288,14 @@ def main(argv: list[str] | None = None) -> int:
     cf = sub.add_parser("confirm", help="确认写入本地 Plan timeline")
     cf.add_argument("--date", help="YYYY-MM-DD，默认今天")
     cf.add_argument("--yes", action="store_true", help="真写（默认 dry-run 只预览）")
+
+    wk = sub.add_parser("weekly", help="本周回顾：把 Time record 时间按 project 聚合（需 Agent SDK）")
+    wk.add_argument("--date", help="该周内任意一天 YYYY-MM-DD，默认上一个完整周")
+    wk.add_argument("--plain", action="store_true", help="纯文本（不用 rich 渲染 bucket 小时条）")
+
+    cw = sub.add_parser("confirm-weekly", help="确认把本周汇总写回 Obsidian Weekly 笔记")
+    cw.add_argument("--date", help="该周内任意一天 YYYY-MM-DD，默认上一个完整周")
+    cw.add_argument("--yes", action="store_true", help="真写（默认 dry-run 只预览）")
 
     lg = sub.add_parser("log", help="录一条 Actual 事件")
     lg.add_argument("start", help="开始 HH:MM")
@@ -218,10 +323,15 @@ def main(argv: list[str] | None = None) -> int:
         "plan": cmd_plan,
         "reflect": cmd_reflect,
         "memory": cmd_memory,
+        "observations": cmd_observations,
+        "tui": cmd_tui,
+        "reclassify": cmd_reclassify,
         "cubox": cmd_cubox,
         "aw-export": cmd_aw_export,
         "confirm": cmd_confirm,
         "log": cmd_log,
+        "weekly": cmd_weekly,
+        "confirm-weekly": cmd_confirm_weekly,
     }[args.cmd](args)
 
 

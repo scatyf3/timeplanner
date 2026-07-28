@@ -11,8 +11,8 @@ from __future__ import annotations
 import datetime as dt
 
 from ..config import config
-from . import gcal, timeline
-from .gcal import Event
+from . import classify, gcal, timeline
+from .gcal import Event, norm_bucket
 
 
 def _m():
@@ -56,3 +56,39 @@ def log_actual(date: dt.date, start: str, end: str, bucket: str, summary_text: s
     e = timeline.make_event(date, start, end, bucket, summary_text)
     _m().append_actual(e)
     return e
+
+
+def reclassify(date: dt.date | None = None, dry_run: bool = True) -> str:
+    """Re-bucket our own logged Actual events by keyword-classifying their summary. Never touches external
+    (hand-made Time record) events. dry_run only previews the color changes; otherwise patches them."""
+    date = date or dt.date.today()
+    evs = _m().list_events(date, "actual")
+    ours = [e for e in evs if not e.external and e.event_id]
+    ext = [e for e in evs if e.external]
+
+    changes = []
+    for e in ours:
+        new = classify.guess_bucket(e.summary)
+        if new != norm_bucket(e.bucket):
+            changes.append((e, new))
+
+    head = f"# 🎨 重标记 Actual bucket（{name()}）—— {date:%Y-%m-%d}" + ("  （DRY RUN，未改）" if dry_run else "")
+    lines = [head, f"我们标记过的事件 {len(ours)} 个，其中需改色 {len(changes)} 个；外部固定约束 {len(ext)} 个（不动）。"]
+    if not changes:
+        lines.append("（没有需要重标记的 —— 要么已对，要么当天没有我们记的事件。）")
+        return "\n".join(lines)
+    for e, new in changes:
+        lines.append(f"  {e.start:%H:%M}–{e.end:%H:%M} 「{e.summary}」：{norm_bucket(e.bucket)} → {new}")
+    if dry_run:
+        lines.append("\n加 --yes 落地：`timeplanner reclassify --yes`")
+        return "\n".join(lines)
+
+    ok = 0
+    for e, new in changes:
+        try:
+            _m().set_bucket(e.event_id, new)
+            ok += 1
+        except Exception as ex:  # noqa: BLE001 — one bad patch shouldn't abort the rest
+            lines.append(f"  ⚠️ 「{e.summary}」改色失败：{ex}")
+    lines.append(f"\n✅ 已重标记 {ok}/{len(changes)} 个事件。")
+    return "\n".join(lines)

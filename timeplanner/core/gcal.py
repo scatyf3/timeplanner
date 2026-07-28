@@ -52,6 +52,23 @@ BUCKET_HEX = {
     "fit": "#33b679",    # legacy → 健康
 }
 
+# Google Calendar's standard event colorId → hex. Used to color events that carry no
+# timeplanner bucket marker (e.g. the manually-kept Time Record / Actual calendar) by
+# their own GCal color instead of defaulting them all to one bucket.
+GCAL_COLOR_HEX = {
+    "1": "#7986cb",   # Lavender
+    "2": "#33b679",   # Sage      — 健康
+    "3": "#8e24aa",   # Grape
+    "4": "#e67c73",   # Flamingo
+    "5": "#f6bf26",   # Banana    — 生活杂务
+    "6": "#f4511e",   # Tangerine
+    "7": "#039be5",   # Peacock   — 工作
+    "8": "#616161",   # Graphite
+    "9": "#3f51b5",   # Blueberry
+    "10": "#0b8043",  # Basil     — 娱乐
+    "11": "#d50000",  # Tomato
+}
+
 # Bucket → ANSI SGR code for the terminal timeline lines (same scheme).
 _BUCKET_ANSI = {
     "main": "34",    # blue
@@ -79,6 +96,13 @@ class Event:
     bucket: str = ""          # empty = external event
     event_id: str = ""
     external: bool = False    # no timeplanner marker → True
+    color_id: str = ""        # GCal event colorId (empty = calendar default)
+
+    def color_hex(self) -> str | None:
+        """Resolve a hex color: prefer our bucket scheme, else fall back to the event's own GCal color."""
+        if self.bucket:
+            return BUCKET_HEX.get(norm_bucket(self.bucket))
+        return GCAL_COLOR_HEX.get(self.color_id)
 
     def line(self, color: bool | None = None) -> str:
         tag = f"[{self.bucket or 'ext'}]"
@@ -135,6 +159,7 @@ def _to_event(item: dict) -> Event:
         bucket=priv.get("bucket", "") if is_ours else "",
         event_id=item.get("id", ""),
         external=not is_ours,
+        color_id=str(item.get("colorId", "")),
     )
 
 
@@ -192,6 +217,16 @@ def commit_plan(date: dt.date, events: list[Event]) -> None:
 def append_actual(event: Event) -> None:
     """Log one Actual event to the Actual calendar (with marker)."""
     _insert(_service(), _cal_id("actual"), event)
+
+
+def set_bucket(event_id: str, bucket: str, which: str = "actual") -> None:
+    """Patch one event's bucket marker + colorId (re-classify a previously-logged event)."""
+    bucket = norm_bucket(bucket)
+    body: dict = {"extendedProperties": {"private": {MARKER_KEY: "1", "bucket": bucket}}}
+    color = BUCKET_COLOR_ID.get(bucket)
+    if color:
+        body["colorId"] = color
+    _service().events().patch(calendarId=_cal_id(which), eventId=event_id, body=body).execute()
 
 
 def summary(date: dt.date | None = None, which: str = "plan", color: bool | None = None) -> str:

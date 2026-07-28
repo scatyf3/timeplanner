@@ -92,6 +92,7 @@ class DailyNote:
     checked_budget: list[str] = field(default_factory=list)
     priorities: dict[str, str] = field(default_factory=dict)  # Main/Side/exploration
     takeaway: str = ""
+    reflections: list[str] = field(default_factory=list)    # bullets under ## 今日感想 (what actually happened)
 
 
 def _parse_daily_text(text: str) -> dict:
@@ -124,6 +125,12 @@ def _parse_daily_text(text: str) -> dict:
                 if pm:
                     priorities[pm.group(1).strip()] = pm.group(2).strip()
 
+    reflections: list[str] = []
+    for name, body in sections.items():
+        if "感想" in name:
+            # _numbered_or_bullet_items already skips `>` callout lines and headings
+            reflections += _numbered_or_bullet_items(body)
+
     takeaway = ""
     m = re.search(r"今日\s*takeaway[^:：\n]*[:：]\s*(.*?)(?:\n|$)", text)
     if m:
@@ -141,6 +148,7 @@ def _parse_daily_text(text: str) -> dict:
         "checked_budget": checked,
         "priorities": priorities,
         "takeaway": takeaway,
+        "reflections": reflections,
     }
 
 
@@ -203,6 +211,66 @@ def scan_deadlines(within_days: int = 14, today: dt.date | None = None) -> list[
                     found.append(Deadline(date=d, text=item["text"], source=item["source"]))
     found.sort(key=lambda x: x.date)
     return found
+
+
+@dataclass
+class Project:
+    folder: str              # "发展-sideproj" (the project folder name)
+    slug: str                # "sideproj" (README filename minus ".README")
+    tag: str                 # "发展/sideproj" (first frontmatter tag, if any)
+    readme: Path
+    subnotes: list[str] = field(default_factory=list)  # other *.md stems in the folder — the event→project vocabulary
+
+
+# Projects live under one of these roots (plural preferred; singular kept as a fallback like scan_deadlines).
+_PROJECT_ROOTS = ("1. Projects", "1. Project")
+_FRONT_TAG_RE = re.compile(r"^\s*-\s*(\S+)")  # a `- 发展/sideproj` line under `tags:`
+
+
+def _first_frontmatter_tag(text: str) -> str:
+    """Pull the first tag out of a note's YAML frontmatter. Handles both block (`tags:\\n  - x`) and inline (`tags: [x]`)."""
+    if not text.startswith("---"):
+        return ""
+    end = text.find("\n---", 3)
+    front = text[3:end] if end != -1 else text[3:]
+    in_tags = False
+    for line in front.splitlines():
+        if re.match(r"^\s*tags\s*:", line):
+            inline = re.search(r"\[([^\]]+)\]", line)  # tags: [发展/sideproj, ...]
+            if inline:
+                return inline.group(1).split(",")[0].strip().strip("'\"#")
+            in_tags = True
+            continue
+        if in_tags:
+            m = _FRONT_TAG_RE.match(line)
+            if m:
+                return m.group(1).strip("'\"#")
+            if line.strip() and not line.startswith((" ", "\t")):
+                break  # left the tags block without finding one
+    return ""
+
+
+def list_projects() -> list[Project]:
+    """Scan the vault's project folders → roster. Each `<folder>/<slug>.README.md` is one project;
+    sibling *.md stems become its event→project vocabulary. Read live, folder-name sorted."""
+    if not config.vault_ok():
+        return []
+    out: list[Project] = []
+    for root_name in _PROJECT_ROOTS:
+        root = config.vault / root_name
+        if not root.is_dir():
+            continue
+        for readme in root.glob("*/*.README.md"):
+            folder = readme.parent.name
+            slug = readme.name[: -len(".README.md")]
+            try:
+                tag = _first_frontmatter_tag(readme.read_text(encoding="utf-8", errors="ignore"))
+            except OSError:
+                tag = ""
+            subnotes = sorted(p.stem for p in readme.parent.glob("*.md") if p != readme)
+            out.append(Project(folder=folder, slug=slug, tag=tag, readme=readme, subnotes=subnotes))
+    out.sort(key=lambda p: p.folder)
+    return out
 
 
 @dataclass

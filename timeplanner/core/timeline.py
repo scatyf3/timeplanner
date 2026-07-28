@@ -151,6 +151,15 @@ def append_actual(event: Event) -> None:
     _save_rows(ACTUAL, rows)
 
 
+def set_bucket(event_id: str, bucket: str, which: str = ACTUAL) -> None:
+    """Re-classify a logged event: rewrite its stored bucket (color follows from bucket at render time)."""
+    rows = _load_rows(which)
+    for r in rows:
+        if r.get("id") == event_id:
+            r["bucket"] = norm_bucket(bucket)
+    _save_rows(which, rows)
+
+
 # ---- summary (same format as gcal.summary) ----
 
 def summary(date: dt.date | None = None, which: str = PLAN, color: bool | None = None) -> str:

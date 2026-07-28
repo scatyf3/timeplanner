@@ -31,6 +31,10 @@ class Config:
     vault: Path = field(default_factory=lambda: Path(_get("TIMEPLANNER_VAULT")).expanduser())
     daily_glob: str = field(default_factory=lambda: _get(
         "TIMEPLANNER_DAILY_GLOB", "0. PeriodicNotes/{year}/Daily/{month}"))
+    # weekly-note folder. {year} is the ISO year (isocalendar().year), not the calendar year —
+    # a late-Dec day can fall in W01 of the next ISO year. No {month} segment (unlike daily_glob).
+    weekly_glob: str = field(default_factory=lambda: _get(
+        "TIMEPLANNER_WEEKLY_GLOB", "0. PeriodicNotes/{year}/Weekly"))
 
     aw_host: str = field(default_factory=lambda: _get("AW_HOST", "http://localhost:5600"))
     # cross-machine AW: a Syncthing-shared folder of per-host daily observation snapshots

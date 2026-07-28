@@ -13,7 +13,7 @@ import datetime as dt
 import json
 
 from .config import config
-from .core import activitywatch, backend, cubox, memory, notes, timeline, weather
+from .core import activitywatch, backend, cubox, memory, notes, observations, timeline, weather, weekly
 
 
 def load_principles() -> str:
@@ -66,10 +66,22 @@ plan 任务：读 notes/AW/天气/现有 timeline → 产出一天的 timeline �
 reflect 任务：对比 ①Plan ②Actual（timeline_read）③Observed（AW），走「收工 4 问」记分板，给一行 takeaway 建议。\
 遇到今天暴露的问题（拖延、专注差、作息、精力管理…），可用 cubox_search 在 ta 收藏的学习/工作/健康文章里找对症的方法再给建议。
 
+weekly 任务（本周回顾）：调用 weekly_context 读这一周的 Time record 时间、各 bucket 小时数、项目名册、完成的 TODO/今日感想。\
+各 bucket 的小时数已在里面算好，**别自己重算**。你的活是**把每条 Time record 事件归到某个 project**——\
+用名册里的线索消歧：project 文件夹名、README 的 slug/alias、以及每个 project 文件夹下的子笔记名（事件摘要「拆 openinfer PR」\
+对得上子笔记 `拆openinfer pr` → 归到 sideproj）；也参考日记里出现的项目/子笔记 wikilink。归不进任何 project 的时间（生活/健康/娱乐/杂项）\
+单列一类，别硬塞。产出**逐项目**一行：`- **项目名**：X 小时 — 这周具体做了啥（用完成的 TODO/感想佐证，一句话）`；\
+末尾附一行「未归类/生活类」时间小计。然后**调用 stage_weekly**（传该周任意一天的 date + 这份 markdown 正文）把汇总 stage 起来。\
+接着做**本周想法 & 洞见**：从 weekly_context 的今日感想(💭)里挑**有信息量**的想法——科研/技术 idea、可沉淀成原则的观察、\
+project 点子、职业/生活 ops、作息洞见——按主题归并成 markdown（别记流水账、别抄鸡毛蒜皮），**调用 stage_weekly_insights**（同一天 date）。\
+并对其中**真正有价值**的每条观察调 **remember_observation**（带 theme + 观察发生的 date）沉淀进 observation 库——它会累积、以后能被 observations_search 召回。\
+最后提示人跑 `timeplanner confirm-weekly` 预览、`--yes` 落地（两段一起写）。辅助式：绝不擅自写笔记。
+
 记忆（自进化）：你有两个记忆工具——
 - remember_thought：把这次规划里**重要的判断/取舍/观察**记下来（如「今天把 side 压到一格因为 main 有 deadline」），下次开工会读回，给你连续性。
 - remember_principle：当你和 ta 聊出一条**可复用的时间管理原则**时记下来（候选，之后并入 principles.md）。
-别记流水账；只记对未来排班真正有用的。每次 plan/reflect 结束前，回顾一下有没有值得记的。
+- remember_observation / observations_search：**observation 库**——把提炼过的观察/洞见沉淀进去（会累积），plan/reflect 时按需用 observations_search 召回过去的观察（如「上次精力差是怎么回事」）。它和 principles 的区别：principles 是成文规则、observation 是海量可检索的原始判断。
+别记流水账；只记对未来排班真正有用的。每次 plan/reflect 结束前，回顾一下有没有值得记/该召回的。
 """
 
 
@@ -114,12 +126,62 @@ def build_options():
                 "text": f"🗂️ 已 stage {len(evs)} 个事件，等人确认：\n{body}\n"
                         f"让 ta 跑 `timeplanner confirm` 预览、`timeplanner confirm --yes` 落地。"}]}
 
+    @tool("weekly_context",
+          "读某一周（ISO 周一至周日）的 Time record 时间：按天列事件 + 各 bucket 小时数 + 项目名册 + 完成的 TODO/今日感想 + 近期 deadline。date 传该周内任意一天。",
+          {"date": str})
+    async def weekly_context(args):
+        d = _parse_date(args.get("date"))
+        return {"content": [{"type": "text", "text": weekly.context_blob(d)}]}
+
+    @tool("stage_weekly",
+          "把每个项目『本周投入时间 + 具体做了什么』的 markdown 汇总 stage 到待确认区（辅助式：这只是暂存，"
+          "人跑 `timeplanner confirm-weekly` 才真写进 Obsidian Weekly 笔记）。返回写回预览。"
+          "date 传该周内任意一天；markdown 是给人看的项目回顾正文。",
+          {"date": str, "markdown": str})
+    async def stage_weekly(args):
+        d = _parse_date(args.get("date"))
+        md = args.get("markdown", "").strip()
+        if not md:
+            return {"content": [{"type": "text", "text": "⚠️ markdown 为空，未 stage。"}]}
+        weekly.stage(d, md)
+        return {"content": [{"type": "text", "text": weekly.write_back(d, md, dry_run=True)}]}
+
+    @tool("stage_weekly_insights",
+          "把『本周想法 & 洞见』的 markdown 汇总 stage 到待确认区（辅助式，人跑 `timeplanner confirm-weekly` 才写进 Weekly 笔记）。"
+          "从 weekly_context 的今日感想(💭)里挑有信息量的想法——科研/技术 idea、可沉淀成原则的观察、project 点子、职业/生活 ops、作息洞见——按主题归并，别记流水账。返回写回预览。",
+          {"date": str, "markdown": str})
+    async def stage_weekly_insights(args):
+        d = _parse_date(args.get("date"))
+        md = args.get("markdown", "").strip()
+        if not md:
+            return {"content": [{"type": "text", "text": "⚠️ markdown 为空，未 stage。"}]}
+        weekly.stage(d, md, kind="insights")
+        return {"content": [{"type": "text", "text": weekly.write_back(d, md, dry_run=True, kind="insights")}]}
+
     @tool("cubox_search",
           "在本地 Cubox 语料（我收藏的学习/工作/健康/心理文章 + 我的高亮批注）里搜关键词，"
           "找可借鉴的方法/观点。query 用空格分词。",
           {"query": str})
     async def cubox_search(args):
         return {"content": [{"type": "text", "text": cubox.search_summary(args.get("query", ""))}]}
+
+    @tool("observations_search",
+          "在『observation 库』（自己过去提炼的观察/洞见，可累积检索）里按关键词召回相关观察。"
+          "遇到反复出现的问题、要做决定、或想引用过去的判断时用。query 用空格分词。",
+          {"query": str})
+    async def observations_search(args):
+        return {"content": [{"type": "text", "text": observations.search_summary(args.get("query", ""))}]}
+
+    @tool("remember_observation",
+          "把一条**提炼过的**观察/洞见沉淀进 observation 库（会累积、可被 observations_search 召回）。"
+          "只记有信息量的（科研/技术 idea、可复用的判断、project 点子、作息/精力规律…），别记流水账。"
+          "theme 给个主题短标签（如『排班原则』『作息』『科研品味』）；date 传观察发生的日期。",
+          {"text": str, "theme": str, "date": str})
+    async def remember_observation(args):
+        added = observations.add(args["text"], theme=args.get("theme", ""),
+                                 source="agent", date=_parse_date(args.get("date")))
+        msg = "🔭 已沉淀进 observation 库。" if added else "（库里已有相同观察，未重复记。）"
+        return {"content": [{"type": "text", "text": msg}]}
 
     @tool("remember_thought", "把一条重要的规划思考/取舍/观察记进 planner 记忆，下次开工能读回", {"text": str, "kind": str})
     async def remember_thought(args):
@@ -136,7 +198,8 @@ def build_options():
         name="timeplanner",
         version="0.1.0",
         tools=[notes_summary, aw_summary, weather_summary, timeline_read, stage_plan,
-               cubox_search, remember_thought, remember_principle],
+               weekly_context, stage_weekly, stage_weekly_insights, cubox_search,
+               observations_search, remember_observation, remember_thought, remember_principle],
     )
     tool_names = [
         "mcp__timeplanner__notes_summary",
@@ -144,7 +207,12 @@ def build_options():
         "mcp__timeplanner__weather_summary",
         "mcp__timeplanner__timeline_read",
         "mcp__timeplanner__stage_plan",
+        "mcp__timeplanner__weekly_context",
+        "mcp__timeplanner__stage_weekly",
+        "mcp__timeplanner__stage_weekly_insights",
         "mcp__timeplanner__cubox_search",
+        "mcp__timeplanner__observations_search",
+        "mcp__timeplanner__remember_observation",
         "mcp__timeplanner__remember_thought",
         "mcp__timeplanner__remember_principle",
     ]
@@ -170,7 +238,12 @@ _TOOL_LABEL = {
     "weather_summary": "读天气",
     "timeline_read": "读 Plan/Actual timeline",
     "stage_plan": "暂存 plan 草案",
+    "weekly_context": "读本周时间/项目",
+    "stage_weekly": "暂存本周汇总",
+    "stage_weekly_insights": "暂存本周洞见",
     "cubox_search": "搜 Cubox 语料",
+    "observations_search": "召回 observation 库",
+    "remember_observation": "沉淀 observation",
     "remember_thought": "记规划思考",
     "remember_principle": "记候选原则",
 }
@@ -253,19 +326,37 @@ async def _ainput(prompt: str) -> str:
     return await asyncio.get_event_loop().run_in_executor(None, lambda: input(prompt))
 
 
-async def run_interactive(prompt: str) -> None:
-    """Multi-turn session: after the draft, keep supplying info and let the agent re-plan until you're done."""
+async def run_interactive(
+    prompt: str,
+    on_round=None,
+    input_hint: str = "\n💬 补充/调整后再排一轮（直接回车结束；结束后 tp confirm 落地）> ",
+    closing: str = "（已结束。最新草案已 stage —— 跑 `tp confirm` 预览、`tp confirm --yes` 落地。）",
+) -> None:
+    """Multi-turn session: after the draft, keep supplying info and let the agent re-plan until you're done.
+
+    on_round(): optional no-arg hook run after each agent turn (e.g. show the freshly re-staged allocation).
+    input_hint / closing let a command tailor the prompt line and the goodbye (e.g. confirm-weekly instead of confirm).
+    """
     sdk = _sdk()
     if not sdk:
         return
     console, dim = _renderer()
     options = build_options()
+
+    def _round():
+        if on_round:
+            try:
+                on_round()
+            except Exception as e:  # noqa: BLE001 — a display hook must never break the session
+                dim(f"（展示更新失败：{e}）")
+
     async with sdk.ClaudeSDKClient(options=options) as client:
         await client.query(prompt)
         await _consume(client.receive_response(), sdk, console, dim)
+        _round()
         while True:
             try:
-                more = await _ainput("\n💬 补充/调整后再排一轮（直接回车结束；结束后 tp confirm 落地）> ")
+                more = await _ainput(input_hint)
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
@@ -273,4 +364,5 @@ async def run_interactive(prompt: str) -> None:
                 break
             await client.query(more)
             await _consume(client.receive_response(), sdk, console, dim)
-    print("（已结束。最新草案已 stage —— 跑 `tp confirm` 预览、`tp confirm --yes` 落地。）")
+            _round()
+    print(closing)
