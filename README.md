@@ -13,7 +13,7 @@ GCal 后端待 OAuth；届时换存储后端即可，core/agent 一行不动。
 3. ~~correctly render time record timeline in `timeplanner summary`~~
 4. ~~read, parse, write cubox article to principles~~
 5. read local health data(apple or other opensource)
-6. sync aw via webdav
+6. ~~sync aw via webdav~~（改用 Syncthing 共享每日快照，见 [docs/aw-sync-setup.md](docs/aw-sync-setup.md)）
 
 ## 快速开始
 
@@ -32,7 +32,9 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 | 命令 | 作用 | 依赖 |
 |---|---|---|
 | `timeplanner doctor` | 环境自检（库、AW、天气、GCal、SDK） | — |
-| `timeplanner summary [--date]` | 四个只读信号汇总（零 agent、零写入） | — |
+| `timeplanner summary [--date]` | 四个只读信号汇总 + 订阅日历约束（零 agent、零写入） | — |
+| `timeplanner calendars` | 列出账号里所有日历的 ID（填 `TIMEPLANNER_GCAL_REFS` 用） | GCal OAuth |
+| `timeplanner aw-export` | 导出本机 AW 当日快照到共享文件夹（跨机合并③观测线） | `TIMEPLANNER_AW_SYNC_DIR` |
 | `timeplanner plan [--date]` | 出今日 plan 草案 → stage 到待确认区 | Agent SDK |
 | `timeplanner confirm [--date] [--yes]` | 辅助式闸门：预览 diff / `--yes` 写进本地 Plan timeline | — |
 | `timeplanner log START END BUCKET SUMMARY...` | 录一条 Actual 事件（②自报层） | — |
@@ -96,6 +98,15 @@ staging（`plan` 的草案）永远本地；`confirm`/`log`/读取按后端路�
 3. 首次写操作弹浏览器授权，token 存 `token.json`（都已 gitignore）
 4. 标记机制：planner 写的事件带 `timeplanner` 标；**没标的一律当外部固定约束**，
    planner 只在空隙排块、`confirm` 时只删自己写的块，**永不覆盖你手建的会议**
+
+### 订阅日历（只读参考）
+
+想让 planner 也避开你**订阅的其它日历**（同账号：NYU 课表、会议 deadline ICS、别人共享给你的日历…）：
+
+1. `timeplanner calendars` 列出账号里所有日历，拷你要的日历 ID
+2. 填进 `.env` 的 `TIMEPLANNER_GCAL_REFS`（逗号分隔多个 ID）
+3. 这些日历**全程只读**，事件当外部固定约束（🔒）出现在 `summary` 里、也喂给 plan/reflect 的 agent，
+   planner 只在其空隙排块，**永不写入**。全天事件（节假日/生日）显示为「全天」，仅供参考不占时段。
 
 ## 下一步（见 docs 里程碑）
 

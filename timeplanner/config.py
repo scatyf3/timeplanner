@@ -41,6 +41,11 @@ class Config:
     # (<host>-<date>.json). Empty = single-machine, feature off. See core/aw_sync.py.
     aw_sync_dir: Path | None = field(default_factory=lambda: (
         Path(_get("TIMEPLANNER_AW_SYNC_DIR")).expanduser() if _get("TIMEPLANNER_AW_SYNC_DIR") else None))
+    # Stable identity for this machine's snapshots. socket.gethostname() is DHCP-derived on some
+    # networks (e.g. `10-20-89-245.dynapool…`), so it changes with the IP — which would write a
+    # second snapshot per day per name and make the merge double-count. Set this on every synced
+    # machine, and pass the same value to scripts/aw_export.py --host.
+    aw_host_name: str = field(default_factory=lambda: _get("TIMEPLANNER_AW_HOST_NAME"))
     # app names to drop from the AW breakdown (noise like the macOS lock screen). Comma-separated,
     # case-insensitive. Applied on the timeplanner side, so snapshots stay faithful.
     aw_ignore_apps: set = field(default_factory=lambda: {
@@ -56,6 +61,11 @@ class Config:
         default_factory=lambda: str(_repo_path(_get("GCAL_TOKEN", "token.json"))))
     gcal_plan_id: str = field(default_factory=lambda: _get("GCAL_PLAN_ID"))
     gcal_actual_id: str = field(default_factory=lambda: _get("GCAL_ACTUAL_ID"))
+    # subscribed (read-only reference) calendars in the same account: comma-separated
+    # calendar IDs. Their events are surfaced as external fixed constraints (🔒), never
+    # written to. Discover IDs with `timeplanner calendars`.
+    gcal_ref_ids: list[str] = field(default_factory=lambda: [
+        s.strip() for s in _get("TIMEPLANNER_GCAL_REFS", "").split(",") if s.strip()])
 
     # storage backend: local (local data/*.json) | gcal (real calendar)
     backend: str = field(default_factory=lambda: _get("TIMEPLANNER_BACKEND", "local"))

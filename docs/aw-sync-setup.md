@@ -20,6 +20,25 @@
  "focus_blocks":[["<iso>","<iso>"]],"top_apps":[["app",min]],"exported_at":"<iso>"}
 ```
 
+## ⚠️ host 名必须稳定
+
+合并按 `<host>-<date>.json` 认机器，`merged_observe()` 靠 `host` 跳过「自己那份」（本机走实时 AW）。
+所以 **host 名一变，同一台机器同一天就会留下两份快照，合并时把自己加两遍**。
+
+`socket.gethostname()` 在 DHCP 派生主机名的网络里就是不稳定的 —— NYU wireless 上这台 Mac 报
+`10-20-89-245.dynapool.wireless.nyu.edu`，随 IP 变。实测：真实 137min 被合并成 273min，
+`summary` 还会显示「合并 2 台」而其实只有一台。
+
+因此每台同步的机器都要显式钉住名字：
+
+- timeplanner 端：`.env` 里 `TIMEPLANNER_AW_HOST_NAME="JuanitadeMacBook-Air"`
+- 裸脚本端：`scripts/aw_export.py --host JuanitadeMacBook-Air`（或 `AW_HOST_NAME` 环境变量）
+
+两边必须**用同一个值**，否则汇集端认不出「自己那份」。名字会被 slug 化（非 `[A-Za-z0-9_.]` → `-`）。
+
+> 改过某台机器的 host 名？去共享文件夹把它**旧名字的快照删掉**——钉名字只防新文件，
+> 已经落盘的旧快照仍会被当成另一台机器加进来。
+
 ---
 
 ## 本机 Windows（汇集端）— 已完成
@@ -36,56 +55,86 @@
 
 ---
 
-## macOS（记录端）— 待办
+## macOS（记录端）— 进行中
 
-### 1. ActivityWatch
-确保已装并在跑（菜单栏有图标）。没装：`brew install --cask activitywatch` 或 https://activitywatch.net 。
+- 设备 ID：`6ZIQFEW-U6L6P7L-AQHPICM-V25V7DL-5SQA3GP-LNSIZZ4-YGB5D63-5HJNUA3`
+- 稳定 host 名：`JuanitadeMacBook-Air`（取自 `scutil --get LocalHostName`）
+- 共享文件夹本地路径：`~/ActivityWatchSync`
 
-### 2. Syncthing
+### 1. ActivityWatch — ✅ 已在跑
+`curl -s localhost:5600/api/0/info` 有响应即可（本机 v0.13.2）。
+
+### 2. Syncthing — ✅ 已装并自启
 ```sh
-brew install syncthing
-brew services start syncthing          # 开机自启
-open http://127.0.0.1:8384             # GUI
+brew install --formula syncthing        # 注意 --formula：`syncthing` 同时是 cask 名
+brew services start syncthing           # 开机自启
+open http://127.0.0.1:8384              # GUI
+syncthing cli show system               # 里面的 myID 就是设备 ID（新版没有 --device-id）
 ```
-拿到本机设备 ID：GUI 右上「Actions → Show ID」，或 `syncthing --device-id`。
 
-### 3. 配对（把 Windows 和 Mac 连起来）
-两种方式二选一：
-
-**A. 让我从 Windows 侧配（省事）**：把 Mac 的设备 ID 发我，我用 Windows 的 Syncthing API 把 Mac 加为远程设备并共享 `timeplanner-aw` 文件夹。然后你在 Mac GUI 上点「接受」，把该文件夹的本地路径设成 `~/ActivityWatchSync`。
-
-**B. 全在 GUI 手点**：
-1. Windows GUI「Add Remote Device」→ 粘贴 Mac 的设备 ID → Save。
-2. Mac GUI 会弹出「新设备」→ 接受，粘贴 Windows 设备 ID。
-3. Windows GUI 里编辑 `timeplanner-aw` 文件夹 →「Sharing」勾上 Mac → Save。
-4. Mac GUI 弹「新文件夹 timeplanner-aw」→ 接受，路径设 `~/ActivityWatchSync`（**Folder ID 必须是 `timeplanner-aw`**）。
-
-### 4. 部署导出脚本
-把 `scripts/aw_export.py` 拷到 Mac（零依赖，系统 python3 即可）。先手动验证：
+### 3. `.env` — ✅ 已配
+```ini
+TIMEPLANNER_AW_SYNC_DIR="/Users/juanitahowe/ActivityWatchSync"
+TIMEPLANNER_AW_HOST_NAME="JuanitadeMacBook-Air"     # 见上面「host 名必须稳定」
+```
+验证导出与合并：
 ```sh
-python3 aw_export.py --sync-dir ~/ActivityWatchSync
-# 应输出：exported <mac-host>-<date>.json (active …min, N blocks)
+timeplanner aw-export      # → 📤 已导出 … JuanitadeMacBook-Air-<date>.json
+timeplanner summary        # ③ AW 分钟数应等于本机实时 AW，且 note 不出现「合并 2 台」
 ```
 
-### 5. 定时导出（每 10 分钟）
-**cron**（最简单）：`crontab -e` 加一行——
-```cron
-*/10 * * * * /usr/bin/python3 /Users/<you>/aw_export.py --sync-dir /Users/<you>/ActivityWatchSync >> /tmp/aw_export.log 2>&1
+### 4. Mac 侧 Syncthing 配对 — ✅ 已配
+```sh
+syncthing cli config devices add --device-id UAAIR6J-… --name windows-collector
+syncthing cli config folders add --id timeplanner-aw --label timeplanner-aw --path ~/ActivityWatchSync
+syncthing cli config folders timeplanner-aw devices add --device-id UAAIR6J-…
 ```
-**launchd**（更 mac 原生）：`~/Library/LaunchAgents/com.timeplanner.awexport.plist`，`ProgramArguments` 指向
-`python3 aw_export.py --sync-dir ~/ActivityWatchSync`，`StartInterval` = 600，然后 `launchctl load`。
+
+### 5. 定时导出（每 10 分钟）— ✅ 已装
+`~/Library/LaunchAgents/com.timeplanner.awexport.plist`，`StartInterval`=600，`RunAtLoad`，
+日志 `/tmp/timeplanner-aw-export.log`。`launchctl list | grep awexport` 第二列是上次退出码（0=好）。
+
+> **launchd 跑的是 `~/.local/bin/aw_export.py` 这份拷贝，不是仓库里的脚本。**
+> macOS TCC 不给 launchd agent 读 `~/Documents`，直接指仓库路径会
+> `[Errno 1] Operation not permitted`。改了仓库脚本记得刷新拷贝：
+> ```sh
+> cp scripts/aw_export.py ~/.local/bin/aw_export.py
+> ```
+> 这也是 `aw_export.py` 写成零依赖单文件的原因——它本来就是拿去别的机器上部署的。
+
+卸载：`launchctl unload ~/Library/LaunchAgents/com.timeplanner.awexport.plist && rm 该 plist`。
+
+### 6. Windows 侧接受 — ⬜ 待办（唯一剩下的手工步骤）
+Mac 已经在往 Windows 敲门了：日志里能看到 `Established secure connection … device=UAAIR6J`
+紧接着 `Lost device connection … error="reading length: EOF"` —— 就是 Windows 还不认识 Mac，
+握完手直接把连接关了。在 **Windows GUI**（http://127.0.0.1:8384）：
+
+1. 「Add Remote Device」→ 粘贴 Mac 设备 ID `6ZIQFEW-U6L6P7L-AQHPICM-V25V7DL-5SQA3GP-LNSIZZ4-YGB5D63-5HJNUA3` → Save
+   （Mac 已连过，多半会直接弹「New Device」提示，点接受即可）
+2. 编辑 `timeplanner-aw` 文件夹 →「Sharing」勾上 Mac → Save
 
 ---
 
 ## 验证
 
-Mac 导出后，Windows 上等 Syncthing 同步过来（几秒），然后：
+配对连上后，Mac 导出 → Windows 等几秒同步过来，然后在 **Windows** 上：
 ```sh
 timeplanner summary          # ③ AW 那条线应出现 Mac 的 focus block，app 占比合并两台
 ```
-`timeplanner summary` 顶部若显示「（合并 2 台：DESKTOP-…, <mac>）」即成功。
+显示「（合并 2 台：DESKTOP-…, JuanitadeMacBook-Air）」即成功。
+
+反过来在 **Mac** 上跑 `timeplanner summary`：它走本机实时 AW，会跳过自己那份快照，
+所以在 Windows 的快照同步过来之前，note 应该是**空的**。若在只有一台机器时就看到
+「合并 2 台」，说明共享文件夹里有同一台机器的重名快照——见上面「host 名必须稳定」。
+
+```sh
+launchctl list | grep awexport            # 第二列 0 = 上次导出成功
+tail -3 /tmp/timeplanner-aw-export.log    # exported <host>-<date>.json (active …min, N blocks)
+syncthing cli config devices list         # 应有 Windows + Mac 两个 ID
+```
 
 ## 关掉/回退
 - 停自启：删 `…\Startup\syncthing-timeplanner.vbs`（Mac：`brew services stop syncthing`）。
+- 停定时导出（Mac）：`launchctl unload ~/Library/LaunchAgents/com.timeplanner.awexport.plist`，再删 plist。
 - 停同步：Syncthing GUI 删 `timeplanner-aw` 文件夹。
 - 停合并：`.env` 里把 `TIMEPLANNER_AW_SYNC_DIR` 置空，timeplanner 立刻回到单机实时 AW。
