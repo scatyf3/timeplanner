@@ -13,6 +13,8 @@ year for late-December / early-January dates.
 
 from __future__ import annotations
 
+import json
+import re
 import datetime as dt
 from pathlib import Path
 
@@ -26,6 +28,28 @@ INSIGHTS_TITLE = "💡 本周想法 & 洞见（timeplanner）"
 # write-back kinds → the markdown section title each upserts. "review" = per-project time;
 # "insights" = the week's noteworthy ideas distilled from 今日感想.
 KINDS = {"review": SECTION_TITLE, "insights": INSIGHTS_TITLE}
+
+# Machine-readable companion to the review section: one HTML comment carrying
+# {project_folder_name: minutes} (plus "_unclassified"). Obsidian doesn't render it;
+# the Weekly dashboard parses it instead of scraping the agent's prose.
+ALLOC_RE = re.compile(r"<!--\s*tp-alloc\s*(\{.*?\})\s*-->", re.S)
+
+
+def alloc_comment(alloc: dict) -> str:
+    """Serialize {folder: minutes} into the tp-alloc HTML comment line."""
+    clean = {str(k): int(round(float(v))) for k, v in (alloc or {}).items()}
+    return "<!-- tp-alloc " + json.dumps(clean, ensure_ascii=False, separators=(",", ":")) + " -->"
+
+
+def parse_alloc(text: str) -> dict:
+    """Pull {folder: minutes} back out of a note (or staged body). {} when absent/malformed."""
+    m = ALLOC_RE.search(text or "")
+    if not m:
+        return {}
+    try:
+        return {str(k): int(v) for k, v in json.loads(m.group(1)).items()}
+    except (ValueError, TypeError, AttributeError):
+        return {}
 
 # Time-record events carry no timeplanner bucket marker (external=True, bucket="").
 # Reverse-map their GCal colorId → bucket. Mirrors gcal.BUCKET_COLOR_ID
