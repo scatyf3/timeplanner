@@ -190,6 +190,27 @@ def cmd_confirm_weekly(args) -> int:
     return 0
 
 
+def cmd_daily(args) -> int:
+    """Agent pass: attribute a day's work-bucket Time record to projects, staged for confirm-daily --inline."""
+    from . import agent
+    from .core import daily_wb
+    d = _date(args.date)
+    if args.clear:
+        daily_wb.clear_staged(d)
+        print(f"（已清掉 {d:%Y-%m-%d} 的暂存分配。）")
+        return 0
+    prompt = (f"当天时间归属：{d:%Y-%m-%d}。{_now_hint(dt.date.today())}"
+              f"请先调用 daily_context（date 传 {d:%Y-%m-%d}）读那天的 work bucket 事件和项目名册，"
+              "按系统提示里的 daily 规则把分钟数分配到各 project，"
+              f"然后调用 stage_daily_alloc（date 同样传 {d:%Y-%m-%d}）暂存，"
+              "提示我跑 `timeplanner confirm-daily --inline` 落地。")
+    mem = memory.context_block()
+    if mem:
+        prompt += f"\n\n{mem}"
+    asyncio.run(agent.run(prompt))
+    return 0
+
+
 def cmd_confirm_daily(args) -> int:
     """Assisted gate: write a day's Actual timeline into its Obsidian Daily note. Defaults to dry-run, --yes commits."""
     from .core import daily_wb
@@ -338,6 +359,10 @@ def main(argv: list[str] | None = None) -> int:
     cw.add_argument("--date", help="该周内任意一天 YYYY-MM-DD，默认上一个完整周")
     cw.add_argument("--yes", action="store_true", help="真写（默认 dry-run 只预览）")
 
+    dy = sub.add_parser("daily", help="当天时间归属：把 work bucket 的 Time record 分配到各 project（需 Agent SDK）")
+    dy.add_argument("--date", help="YYYY-MM-DD，默认今天")
+    dy.add_argument("--clear", action="store_true", help="清掉这天的暂存分配")
+
     cd_ = sub.add_parser("confirm-daily", help="确认把某天的 Time record timeline 写回 Obsidian Daily 笔记")
     cd_.add_argument("--date", help="YYYY-MM-DD，默认今天")
     cd_.add_argument("--yes", action="store_true", help="真写（默认 dry-run 只预览）")
@@ -379,6 +404,7 @@ def main(argv: list[str] | None = None) -> int:
         "log": cmd_log,
         "weekly": cmd_weekly,
         "confirm-weekly": cmd_confirm_weekly,
+        "daily": cmd_daily,
         "confirm-daily": cmd_confirm_daily,
     }[args.cmd](args)
 

@@ -10,6 +10,7 @@ import datetime as dt
 import json
 import re
 
+from ..config import config
 from . import backend, notes, weekly
 from .rollover import _upsert_section
 
@@ -110,7 +111,12 @@ def match_project(summary: str, projects: list) -> object | None:
 
 
 def project_minutes(date: dt.date) -> tuple[dict, int]:
-    """{project_folder: minutes} for a day's Actual events, plus unmatched minutes."""
+    """{project_folder: minutes} for a day's Actual events, plus unmatched minutes.
+    An agent-staged allocation (see `timeplanner daily`) wins over the literal matcher."""
+    st = staged_alloc(date)
+    if st is not None:
+        unassigned = int(st.pop("_unassigned", 0))
+        return st, unassigned
     events, _ = gather(date)
     projects = notes.list_projects()
     per: dict[str, int] = {}
@@ -178,3 +184,73 @@ def write_inline(date: dt.date, dry_run: bool = True) -> str:
         return f"{head}\n{detail}{note}\n\n{section}\n\n加 --yes 落地：`timeplanner confirm-daily --inline --yes`"
     path.write_text(new, encoding="utf-8")
     return f"{head}\n{detail}{note}\n✅ 已回填 {changed} 行 → {path}"
+
+
+# ------------------------------------------------------- agent-assisted attribution
+# The deterministic matcher above only fires on literal vocabulary. For everything else
+# (口语 like "main project收菜", "spec compact" vs slug `speccompact`, "lc") an agent maps
+# the day's *work-bucket* events onto the roster and stages {folder: minutes}; the staged
+# allocation then wins over the deterministic one. Same assisted gate as weekly.
+LIFECYCLE_RE = re.compile(r"^lifecycle:\s*(\S+)\s*$", re.M)
+
+
+def _lifecycle_of(project) -> str:
+    try:
+        return (LIFECYCLE_RE.search(project.readme.read_text(encoding="utf-8", errors="ignore")) or [None, ""])[1]
+    except (OSError, TypeError, IndexError):
+        return ""
+
+
+def context_blob(date: dt.date) -> str:
+    """What the agent needs to attribute a day: the work-bucket events + the project roster
+    (with each project's lifecycle, so the allocation rules can be stated in terms of it)."""
+    events, _ = gather(date)
+    work = [e for e in events if weekly.bucket_of(e) == "work"]
+    lines = [f"# {date:%Y-%m-%d} 的 Time record（只列 work bucket，其余 bucket 不参与项目归属）"]
+    if not work:
+        lines.append("（这天没有 work bucket 事件）")
+    for e in work:
+        mins = int((e.end - e.start).total_seconds() // 60)
+        lines.append(f"- {e.start:%H:%M}–{e.end:%H:%M}（{mins} 分钟）{e.summary}")
+    total = sum(int((e.end - e.start).total_seconds() // 60) for e in work)
+    lines.append(f"\nwork 合计 **{total} 分钟**（分配结果的总和必须等于它）")
+
+    projects = notes.list_projects()
+    if projects:
+        lines.append("\n**项目名册（folder 是分配时要用的键）：**")
+        for p in projects:
+            lc = _lifecycle_of(p)
+            tag = f" #{p.tag}" if p.tag else ""
+            subs = "、".join(p.subnotes[:12])
+            more = f" …(+{len(p.subnotes) - 12})" if len(p.subnotes) > 12 else ""
+            head = f"- **{p.folder}**（{p.slug}{tag}｜lifecycle: {lc or '未标'}）"
+            lines.append(f"{head}：{subs}{more}" if subs else head)
+    return "\n".join(lines)
+
+
+def _stage_dir():
+    return config.data_dir / "daily_proposed"
+
+
+def _stage_path(date: dt.date):
+    return _stage_dir() / f"{date:%Y-%m-%d}.json"
+
+
+def stage_alloc(date: dt.date, alloc: dict) -> None:
+    _stage_dir().mkdir(parents=True, exist_ok=True)
+    clean = {str(k): int(round(float(v))) for k, v in (alloc or {}).items()}
+    _stage_path(date).write_text(json.dumps(clean, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def staged_alloc(date: dt.date) -> dict | None:
+    p = _stage_path(date)
+    if not p.is_file():
+        return None
+    try:
+        return {str(k): int(v) for k, v in json.loads(p.read_text(encoding="utf-8")).items()}
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def clear_staged(date: dt.date) -> None:
+    _stage_path(date).unlink(missing_ok=True)

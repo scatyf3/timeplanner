@@ -81,6 +81,17 @@ project 点子、职业/生活 ops、作息洞见——按主题归并成 markdo
 并对其中**真正有价值**的每条观察调 **remember_observation**（带 theme + 观察发生的 date）沉淀进 observation 库——它会累积、以后能被 observations_search 召回。\
 最后提示人跑 `timeplanner confirm-weekly` 预览、`--yes` 落地（两段一起写）。辅助式：绝不擅自写笔记。
 
+daily 任务（当天时间归属）：调用 daily_context 读那天的 work bucket 事件 + 项目名册。\
+你的活是**把每条 work 事件的分钟数分配到某个 project**，然后调用 stage_daily_alloc 暂存。规则：\
+（1）事件描述里能看出具体项目的（项目 folder / slug / tag / 子笔记名的口语变体都算，比如「spec compact」对应 `speccompact`、\
+「lc」「leetcode」对应求职那条线），就归那个项目；\
+（2）说的是「main project」「主线」「实验收菜」这类**主线科研**，归到 lifecycle 为 `cap` 的那个项目；\
+（3）泛泛的科研（看得出在做研究但说不清是哪个），**按平均分摊到所有 lifecycle 为 `residual` 的项目**，\
+除不尽的分钟数给排在前面的项目；\
+（4）实在归不进去的放 `_unassigned`，别硬塞；\
+（5）所有值之和必须等于 daily_context 里给的 work 合计分钟数——分配前后对一下账。\
+最后提示人跑 `timeplanner confirm-daily --inline` 预览、`--yes` 落地。辅助式：绝不擅自写笔记。
+
 记忆（自进化）：你有两个记忆工具——
 - remember_thought：把这次规划里**重要的判断/取舍/观察**记下来（如「今天把 side 压到一格因为 main 有 deadline」），下次开工会读回，给你连续性。
 - remember_principle：当你和 ta 聊出一条**可复用的时间管理原则**时记下来（候选，之后并入 principles.md）。
@@ -178,6 +189,36 @@ def build_options():
         weekly.stage(d, md, kind="insights")
         return {"content": [{"type": "text", "text": weekly.write_back(d, md, dry_run=True, kind="insights")}]}
 
+    @tool("daily_context",
+          "读某一天的 Time record（只含 work bucket 的事件 + 项目名册，名册里带每个项目的 lifecycle）。"
+          "做 daily 归属时先调它。date 传那一天 YYYY-MM-DD。",
+          {"date": str})
+    async def daily_context(args):
+        from .core import daily_wb
+        return {"content": [{"type": "text", "text": daily_wb.context_blob(_parse_date(args.get("date")))}]}
+
+    @tool("stage_daily_alloc",
+          "把某一天『每个项目投入了多少分钟』暂存到待确认区（辅助式：人跑 "
+          "`timeplanner confirm-daily --inline` 才真写进 Daily 笔记的 Project List）。"
+          "alloc_json 是 JSON 对象 {项目文件夹名: 分钟数}，键必须原样用名册里的 folder；"
+          "实在归不进任何项目的放 \"_unassigned\"。所有值之和必须等于 work 合计分钟数。",
+          {"date": str, "alloc_json": str})
+    async def stage_daily_alloc(args):
+        from .core import daily_wb
+        d = _parse_date(args.get("date"))
+        try:
+            alloc = json.loads((args.get("alloc_json") or "").strip() or "{}")
+        except ValueError:
+            return {"content": [{"type": "text", "text": "⚠️ alloc_json 不是合法 JSON，未 stage。重发一次。"}]}
+        if not alloc:
+            return {"content": [{"type": "text", "text": "⚠️ alloc 为空，未 stage。"}]}
+        daily_wb.stage_alloc(d, alloc)
+        total = sum(int(v) for v in alloc.values())
+        rows = "\n".join(f"  {k}  {v} 分钟" for k, v in sorted(alloc.items(), key=lambda kv: -int(kv[1])))
+        return {"content": [{"type": "text", "text":
+                f"✅ 已暂存 {d:%Y-%m-%d} 的分配（合计 {total} 分钟）：\n{rows}\n"
+                "跑 `timeplanner confirm-daily --inline` 预览、加 --yes 落地。"}]}
+
     @tool("cubox_search",
           "在本地 Cubox 语料（我收藏的学习/工作/健康/心理文章 + 我的高亮批注）里搜关键词，"
           "找可借鉴的方法/观点。query 用空格分词。",
@@ -218,7 +259,8 @@ def build_options():
         name="timeplanner",
         version="0.1.0",
         tools=[notes_summary, aw_summary, weather_summary, timeline_read, stage_plan,
-               weekly_context, stage_weekly, stage_weekly_insights, cubox_search,
+               weekly_context, stage_weekly, stage_weekly_insights,
+               daily_context, stage_daily_alloc, cubox_search,
                observations_search, remember_observation, remember_thought, remember_principle],
     )
     tool_names = [
@@ -230,6 +272,8 @@ def build_options():
         "mcp__timeplanner__weekly_context",
         "mcp__timeplanner__stage_weekly",
         "mcp__timeplanner__stage_weekly_insights",
+        "mcp__timeplanner__daily_context",
+        "mcp__timeplanner__stage_daily_alloc",
         "mcp__timeplanner__cubox_search",
         "mcp__timeplanner__observations_search",
         "mcp__timeplanner__remember_observation",
@@ -261,6 +305,8 @@ _TOOL_LABEL = {
     "weekly_context": "读本周时间/项目",
     "stage_weekly": "暂存本周汇总",
     "stage_weekly_insights": "暂存本周洞见",
+    "daily_context": "读当天 Time record",
+    "stage_daily_alloc": "暂存当天项目分配",
     "cubox_search": "搜 Cubox 语料",
     "observations_search": "召回 observation 库",
     "remember_observation": "沉淀 observation",
