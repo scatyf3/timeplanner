@@ -75,7 +75,7 @@ weekly 任务（本周回顾）：调用 weekly_context 读这一周的 Time rec
 用名册里的线索消歧：project 文件夹名、README 的 slug/alias、以及每个 project 文件夹下的子笔记名（事件摘要「拆 openinfer PR」\
 对得上子笔记 `拆openinfer pr` → 归到 sideproj）；也参考日记里出现的项目/子笔记 wikilink。归不进任何 project 的时间（生活/健康/娱乐/杂项）\
 单列一类，别硬塞。产出**逐项目**一行：`- **项目名**：X 小时 — 这周具体做了啥（用完成的 TODO/感想佐证，一句话）`；\
-末尾附一行「未归类/生活类」时间小计。然后**调用 stage_weekly**（传该周任意一天的 date + 这份 markdown 正文）把汇总 stage 起来。\
+末尾附一行「未归类/生活类」时间小计。然后**调用 stage_weekly**（传该周任意一天的 date + 这份 markdown 正文 + `alloc_json`）把汇总 stage 起来——`alloc_json` 是 `{项目文件夹名: 分钟数}` 的 JSON，键**原样抄名册里的 folder**，未归类的放 `"_unclassified"`；面板靠它画图，必须传。\
 接着做**本周想法 & 洞见**：从 weekly_context 的今日感想(💭)里挑**有信息量**的想法——科研/技术 idea、可沉淀成原则的观察、\
 project 点子、职业/生活 ops、作息洞见——按主题归并成 markdown（别记流水账、别抄鸡毛蒜皮），**调用 stage_weekly_insights**（同一天 date）。\
 并对其中**真正有价值**的每条观察调 **remember_observation**（带 theme + 观察发生的 date）沉淀进 observation 库——它会累积、以后能被 observations_search 召回。\
@@ -145,15 +145,26 @@ def build_options():
     @tool("stage_weekly",
           "把每个项目『本周投入时间 + 具体做了什么』的 markdown 汇总 stage 到待确认区（辅助式：这只是暂存，"
           "人跑 `timeplanner confirm-weekly` 才真写进 Obsidian Weekly 笔记）。返回写回预览。"
-          "date 传该周内任意一天；markdown 是给人看的项目回顾正文。",
-          {"date": str, "markdown": str})
+          "date 传该周内任意一天；markdown 是给人看的项目回顾正文；"
+          "alloc_json 是同一份数据的机器可读版：JSON 对象 {项目文件夹名: 分钟数}，"
+          "键必须**原样**用项目名册里的 folder（如 \"发展-求职-26fall秋招\"），归不进任何 project 的时间放 \"_unclassified\"。"
+          "它会被写成一行 HTML 注释跟在正文后面，Obsidian 不渲染，Weekly 面板靠它出图——所以务必传。",
+          {"date": str, "markdown": str, "alloc_json": str})
     async def stage_weekly(args):
         d = _parse_date(args.get("date"))
         md = args.get("markdown", "").strip()
         if not md:
             return {"content": [{"type": "text", "text": "⚠️ markdown 为空，未 stage。"}]}
-        weekly.stage(d, md)
-        return {"content": [{"type": "text", "text": weekly.write_back(d, md, dry_run=True)}]}
+        raw = (args.get("alloc_json") or "").strip()
+        alloc = {}
+        if raw:
+            try:
+                alloc = json.loads(raw)
+            except ValueError:
+                return {"content": [{"type": "text", "text": "⚠️ alloc_json 不是合法 JSON，未 stage。重发一次。"}]}
+        body = md + ("\n\n" + weekly.alloc_comment(alloc) if alloc else "")
+        weekly.stage(d, body)
+        return {"content": [{"type": "text", "text": weekly.write_back(d, body, dry_run=True)}]}
 
     @tool("stage_weekly_insights",
           "把『本周想法 & 洞见』的 markdown 汇总 stage 到待确认区（辅助式，人跑 `timeplanner confirm-weekly` 才写进 Weekly 笔记）。"
