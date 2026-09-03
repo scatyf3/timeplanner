@@ -193,7 +193,10 @@ def cmd_confirm_weekly(args) -> int:
 def cmd_confirm_daily(args) -> int:
     """Assisted gate: write a day's Actual timeline into its Obsidian Daily note. Defaults to dry-run, --yes commits."""
     from .core import daily_wb
-    print(daily_wb.write_back(_date(args.date), dry_run=not args.yes))
+    d = _date(args.date)
+    if getattr(args, "inline", False):
+        print(daily_wb.write_inline(d, dry_run=not args.yes))
+    print(daily_wb.write_back(d, dry_run=not args.yes))
     return 0
 
 
@@ -338,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
     cd_ = sub.add_parser("confirm-daily", help="确认把某天的 Time record timeline 写回 Obsidian Daily 笔记")
     cd_.add_argument("--date", help="YYYY-MM-DD，默认今天")
     cd_.add_argument("--yes", action="store_true", help="真写（默认 dry-run 只预览）")
+    cd_.add_argument("--inline", action="store_true", help="同时把每个项目的时长回填到 ## Project List 行尾（2hr / 1hr30）")
 
     lg = sub.add_parser("log", help="录一条 Actual 事件")
     lg.add_argument("start", help="开始 HH:MM")
