@@ -90,6 +90,7 @@ def write_back(date: dt.date, dry_run: bool = True) -> str:
 PROJ_LINE = re.compile(r"^(\s*\d+\.\s*\[\[[^\]|]+\|([^\]]+)\]\])(.*)$")
 HR_TAIL = re.compile(r"\s*\d+\s*hr\s*\d*\s*$")
 TOTAL_LINE = re.compile(r"^\s*\d+\s*hr\s*\d*\s*$")
+HR_LINE = re.compile(r"(\d+)\s*hr\s*(\d+)?\s*$")
 
 
 def _fmt_hr(minutes: int) -> str:
@@ -150,7 +151,13 @@ def backfill_project_list(text: str, per_project: dict) -> tuple[str, int]:
         if not m:
             continue
         head, folder, tail = m.group(1), m.group(2).strip(), HR_TAIL.sub("", m.group(3))
-        mins = int(per_project.get(folder, 0))
+        if folder not in per_project:
+            # 这次没有该项目的数据 → 整行原样保留（别抹掉你手写的或上一次写的时长）
+            prev = HR_LINE.search(m.group(3))
+            if prev:
+                total += int(prev.group(1)) * 60 + int(prev.group(2) or 0)
+            continue
+        mins = int(per_project[folder])
         new = f"{head}{tail} {_fmt_hr(mins)}" if mins else head + tail
         total += mins
         if new != lines[i]:
