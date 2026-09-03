@@ -124,6 +124,7 @@ def _service():
         raise GCalNotConfigured(
             f"未配置 Google OAuth：把客户端凭据放到 {creds_path}（见 .env.example / README）。")
     try:
+        from google.auth.exceptions import RefreshError
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
@@ -136,8 +137,15 @@ def _service():
         creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                # refresh token 被吊销/过期（invalid_grant）：丢掉旧 token，重新走浏览器授权。
+                creds = None
+        if not creds or not creds.valid:
+            if not creds_path.is_file():
+                raise GCalNotConfigured(
+                    f"授权已失效，且缺少 {creds_path}：去 Google Cloud Console 重新下载 OAuth 客户端凭据。")
             flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
             creds = flow.run_local_server(port=0)
         token_path.write_text(creds.to_json(), encoding="utf-8")
