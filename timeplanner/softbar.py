@@ -295,8 +295,38 @@ class SoftBar(QWidget):
         self._place()
 
 
+def _hide_dock_icon() -> None:
+    """macOS: run as an accessory app (no Dock icon, no app menu), like a menu-bar utility. No pyobjc needed."""
+    if sys.platform != "darwin":
+        return
+    try:
+        import ctypes
+        import ctypes.util
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.sel_registerName.restype = ctypes.c_void_p
+        send = objc.objc_msgSend
+        send.restype = ctypes.c_void_p
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        nsapp = send(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        send(nsapp, objc.sel_registerName(b"setActivationPolicy:"), 1)   # NSApplicationActivationPolicyAccessory
+    except Exception:  # noqa: BLE001 — cosmetic; a Dock icon is not worth crashing over
+        pass
+
+
 def run() -> int:
+    from PySide6.QtCore import QLockFile
+
+    from .config import config
+
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    lock = QLockFile(str(config.data_dir / "softbar.lock"))
+    if not lock.tryLock(200):   # login autostart + a manual open → still one bar
+        print("浮动条已经在跑了。")
+        return 0
     app = QApplication.instance() or QApplication(sys.argv)
+    _hide_dock_icon()
     app.setQuitOnLastWindowClosed(True)
     pal = app.palette()
     pal.setColor(QPalette.ColorRole.ToolTipBase, QColor("#222"))

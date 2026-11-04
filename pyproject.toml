@@ -18,7 +18,8 @@ agent = ["claude-agent-sdk>=0.1.0"]
 # 交互式终端仪表盘（`timeplanner tui`）。Textual 基于 rich，只读 summary 不需要它。
 tui = ["textual>=0.60"]
 # 浮动条 softbar（`timeplanner softbar`），Mac / Windows 通用。
-softbar = ["PySide6>=6.6"]
+# 6.9+ 的 Qt 需要 macOS 14.4+；6.8 支持 Python 3.13，对系统版本要求最低。
+softbar = ["PySide6>=6.8,<6.9"]
 
 [project.scripts]
 timeplanner = "timeplanner.cli:main"

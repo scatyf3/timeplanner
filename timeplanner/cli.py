@@ -208,7 +208,7 @@ def cmd_reclassify(args) -> int:
     return 0
 
 
-def cmd_softbar(_args) -> int:
+def cmd_softbar(args) -> int:
     """Floating always-on-top bar for one-click soft time recording (PySide6 soft dependency)."""
     try:
         import PySide6  # noqa: F401
@@ -220,8 +220,13 @@ def cmd_softbar(_args) -> int:
     try:
         from . import softbar
     except ImportError as e:  # PySide6 is there but Qt failed to load: show the real reason
-        print(f"⚠️ PySide6 已安装，但加载 Qt 失败：{e}\n（Python：{sys.executable}）")
+        print(f"⚠️ PySide6 已安装，但加载 Qt 失败：{e}\n（Python：{sys.executable}）\n"
+              "macOS 版本较老时试试：pip install 'PySide6>=6.8,<6.9'")
         return 1
+    if args.install or args.uninstall:
+        from . import autostart
+        print(autostart.install() if args.install else autostart.uninstall())
+        return 0
     return softbar.run()
 
 
@@ -355,7 +360,9 @@ def main(argv: list[str] | None = None) -> int:
     tp = sub.add_parser("tui", help="交互式终端仪表盘（timeline + 时间占比 + 实时时钟 + 记活动）")
     tp.add_argument("--date", help="YYYY-MM-DD，默认今天")
 
-    sub.add_parser("softbar", help="屏幕浮动条：一键切 bucket 软记录时间（需 PySide6）")
+    sb = sub.add_parser("softbar", help="屏幕浮动条：一键切 bucket 软记录时间（需 PySide6）")
+    sb.add_argument("--install", action="store_true", help="装成 app + 登录自启（macOS / Windows）")
+    sb.add_argument("--uninstall", action="store_true", help="移除 --install 装的 app 和自启项")
     rv = sub.add_parser("rec", help="命令行软记录：rec <bucket> [描述] 开始/切换 · rec stop · rec status")
     rv.add_argument("what", choices=["main", "side", "life", "health", "fun", "stop", "status"])
     rv.add_argument("summary", nargs="*", help="在干嘛（可选）")

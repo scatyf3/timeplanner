@@ -74,6 +74,10 @@ timeplanner softbar
 休息日 / 回来日上午 / 事件后点 main、side，会提示一次，再点一次照样开始。关掉浮动条不会停止记录
 （进行中那段存在 `data/running.json`），拖动可移位置，右键菜单可刷新、回到顶部、退出。
 
+想让它像个 app 一样常驻：`timeplanner softbar --install`。macOS 会建 `~/Applications/TimePlanner Softbar.app`
+（Spotlight 能搜到、Dock 不显示图标）并登录自启、崩了自动重启；Windows 放一个开机启动项。同时只会有一个浮动条。
+`timeplanner softbar --uninstall` 全部移除。
+
 多端靠 GCal 后端同步：Mac 和 Windows 各开一个浮动条、`TIMEPLANNER_BACKEND=gcal`，写的是同一个「Actual」日历。
 Apple Watch 用快捷指令往这个日历写，见 [docs/apple-watch-shortcuts.md](docs/apple-watch-shortcuts.md)。
 
