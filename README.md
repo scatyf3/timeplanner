@@ -40,6 +40,8 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 | `timeplanner log START END BUCKET SUMMARY...` | 录一条 Actual 事件（②自报层） | — |
 | `timeplanner reflect [--date]` | 晚间复盘：①Plan vs ②Actual vs ③Observed | Agent SDK |
 | `timeplanner memory [--clear]` | 看/清 planner 记忆（规划思考 + 候选原则） | — |
+| `timeplanner softbar` | 屏幕浮动条：一键切 bucket 软记录时间，写进 ②Actual | PySide6（`.[softbar]`） |
+| `timeplanner rec <bucket> [描述] \| stop \| status` | 浮动条的命令行版：开始/切换、停止、看状态 | — |
 
 写入流程（辅助式）：`plan`（agent stage 草案）→ `confirm`（看 diff）→ `confirm --yes`（落地）。
 本地 timeline 存在 `data/plan.json` / `data/actual.json`（gitignore），schema 与 GCal 事件一致。
@@ -59,6 +61,21 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 另外每天都检查：fun 紧跟 main/side 时提醒中间加 10–15min 收尾（写 next action → 收拾房间 → 玩）。
 事件来源：订阅日历、Plan 里手建的外部事件、Actual 记录、项目笔记里当天的 📅 deadline；planner 自己排的块和「准备/mock/复盘」这类不算。
 规则原文见 `principles.md`「休息与恢复」。
+
+### 浮动条 softbar 与多端
+
+```bash
+pip install -e '.[softbar]'
+timeplanner softbar
+```
+
+屏幕顶部一条置顶细条：今天是哪种日子 · 当前计划块和剩余时间 · 正在记录的活动。点一个 bucket 就结束上一段、
+写进 ②Actual、开始下一段；描述可选（输入框里打字回车，按关键词猜 bucket）。工作直接切到「玩」时会问要不要先收尾 12 分钟；
+休息日 / 回来日上午 / 事件后点 main、side，会提示一次，再点一次照样开始。关掉浮动条不会停止记录
+（进行中那段存在 `data/running.json`），拖动可移位置，右键菜单可刷新、回到顶部、退出。
+
+多端靠 GCal 后端同步：Mac 和 Windows 各开一个浮动条、`TIMEPLANNER_BACKEND=gcal`，写的是同一个「Actual」日历。
+Apple Watch 用快捷指令往这个日历写，见 [docs/apple-watch-shortcuts.md](docs/apple-watch-shortcuts.md)。
 
 ### Planner 记忆（自进化雏形）
 

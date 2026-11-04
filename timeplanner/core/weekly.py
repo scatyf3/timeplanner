@@ -19,7 +19,7 @@ import datetime as dt
 from pathlib import Path
 
 from ..config import config
-from . import backend, notes
+from . import backend, classify, notes
 from .gcal import BUCKET_HEX, Event
 from .rollover import _upsert_section
 
@@ -65,7 +65,12 @@ def bucket_of(e: Event) -> str:
     """A Time-record event's bucket: its own marker if present, else reverse-mapped from GCal color, else 'other'."""
     if e.bucket:
         return "work" if e.bucket in ("main", "side") else e.bucket
-    return _COLOR_BUCKET.get(e.color_id, "other")
+    if e.color_id in _COLOR_BUCKET:
+        return _COLOR_BUCKET[e.color_id]
+    b = classify.explicit_bucket(e.summary)   # e.g. an Apple Watch shortcut's "[fun] 打塔"
+    if b:
+        return "work" if b in ("main", "side") else b
+    return "other"
 
 
 def bucket_label(b: str) -> str:

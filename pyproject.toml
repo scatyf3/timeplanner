@@ -17,6 +17,8 @@ dependencies = [
 agent = ["claude-agent-sdk>=0.1.0"]
 # 交互式终端仪表盘（`timeplanner tui`）。Textual 基于 rich，只读 summary 不需要它。
 tui = ["textual>=0.60"]
+# 浮动条 softbar（`timeplanner softbar`），Mac / Windows 通用。
+softbar = ["PySide6>=6.6"]
 
 [project.scripts]
 timeplanner = "timeplanner.cli:main"

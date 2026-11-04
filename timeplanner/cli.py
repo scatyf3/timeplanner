@@ -208,6 +208,40 @@ def cmd_reclassify(args) -> int:
     return 0
 
 
+def cmd_softbar(_args) -> int:
+    """Floating always-on-top bar for one-click soft time recording (PySide6 soft dependency)."""
+    try:
+        from . import softbar
+    except ImportError:
+        print("⚠️ 未安装 PySide6。装它才能跑浮动条：\n    pip install -e '.[softbar]'\n"
+              "（命令行版用 `timeplanner rec main` / `rec stop` / `rec status`。）")
+        return 1
+    return softbar.run()
+
+
+def cmd_rec(args) -> int:
+    """Command-line twin of the softbar: start/switch, stop, or show the running activity."""
+    from .core import running
+    what = args.what
+    if what == "status":
+        print(running.status_text())
+        return 0
+    if what == "stop":
+        written = running.stop()
+        print("\n".join(f"⏹ 已记 {e.line()}" for e in written) or "（当前没有在记录）")
+        return 0
+    note = running.work_on_off_day(what)
+    if note:
+        print(f"💡 {note}（只是提醒，照样开始）")
+    if running.wants_wind_down(what):
+        print("💡 从工作直接切到玩：先 `timeplanner rec life 收尾` 10–15 分钟会更好收得住。")
+    r, written = running.start(what, " ".join(args.summary or []))
+    for e in written:
+        print(f"⏹ 已记 {e.line()}")
+    print(f"▶ 开始 [{r.bucket}] {r.summary}（{r.start:%H:%M}）")
+    return 0
+
+
 def cmd_tui(args) -> int:
     """Launch the interactive day dashboard (read-only). Textual is a soft dependency."""
     d = _date(args.date)
@@ -315,6 +349,11 @@ def main(argv: list[str] | None = None) -> int:
     tp = sub.add_parser("tui", help="交互式终端仪表盘（timeline + 时间占比 + 实时时钟 + 记活动）")
     tp.add_argument("--date", help="YYYY-MM-DD，默认今天")
 
+    sub.add_parser("softbar", help="屏幕浮动条：一键切 bucket 软记录时间（需 PySide6）")
+    rv = sub.add_parser("rec", help="命令行软记录：rec <bucket> [描述] 开始/切换 · rec stop · rec status")
+    rv.add_argument("what", choices=["main", "side", "life", "health", "fun", "stop", "status"])
+    rv.add_argument("summary", nargs="*", help="在干嘛（可选）")
+
     rc = sub.add_parser("reclassify", help="按描述重判 bucket、给记过的 Actual 事件重新上色")
     rc.add_argument("--date", help="YYYY-MM-DD，默认今天")
     rc.add_argument("--yes", action="store_true", help="真改（默认 dry-run 只预览）")
@@ -372,6 +411,8 @@ def main(argv: list[str] | None = None) -> int:
         "memory": cmd_memory,
         "observations": cmd_observations,
         "tui": cmd_tui,
+        "softbar": cmd_softbar,
+        "rec": cmd_rec,
         "reclassify": cmd_reclassify,
         "cubox": cmd_cubox,
         "aw-export": cmd_aw_export,

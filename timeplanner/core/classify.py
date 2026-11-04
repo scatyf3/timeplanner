@@ -10,6 +10,8 @@ Used by the TUI recorder; an explicit leading bucket token still overrides this.
 
 from __future__ import annotations
 
+import re
+
 # (bucket, keywords) in priority order. Substring match, case-insensitive; CJK needs no word boundary.
 _RULES: list[tuple[str, tuple[str, ...]]] = [
     ("health", ("walk", "散步", "遛", "健身", "gym", "运动", "锻炼", "骑车", "单车", "跑步", "游泳",
@@ -26,6 +28,14 @@ _RULES: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 DEFAULT_BUCKET = "main"
+_EXPLICIT = re.compile(r"^\s*[\[【(（]?\s*(main|side|life|health|fun)(?:\s*[\]】)）:：]|\s|$)", re.IGNORECASE)
+
+
+def explicit_bucket(text: str) -> str | None:
+    """A bucket written at the start of a title — `[fun] 打塔`, `fun 打塔`, `health：健身`. Used for events made
+    outside timeplanner (Apple Watch shortcuts, hand-made) that carry no marker or color."""
+    m = _EXPLICIT.match(text or "")
+    return m.group(1).lower() if m else None
 
 
 def guess_bucket(text: str) -> str:
