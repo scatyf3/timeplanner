@@ -211,10 +211,16 @@ def cmd_reclassify(args) -> int:
 def cmd_softbar(_args) -> int:
     """Floating always-on-top bar for one-click soft time recording (PySide6 soft dependency)."""
     try:
-        from . import softbar
+        import PySide6  # noqa: F401
     except ImportError:
-        print("⚠️ 未安装 PySide6。装它才能跑浮动条：\n    pip install -e '.[softbar]'\n"
+        print(f"⚠️ 当前 Python（{sys.executable}）里没有 PySide6。用同一个 Python 装：\n"
+              f"    {sys.executable} -m pip install -e '.[softbar]'\n"
               "（命令行版用 `timeplanner rec main` / `rec stop` / `rec status`。）")
+        return 1
+    try:
+        from . import softbar
+    except ImportError as e:  # PySide6 is there but Qt failed to load: show the real reason
+        print(f"⚠️ PySide6 已安装，但加载 Qt 失败：{e}\n（Python：{sys.executable}）")
         return 1
     return softbar.run()
 
