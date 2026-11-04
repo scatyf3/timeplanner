@@ -72,7 +72,7 @@ timeplanner softbar
 屏幕顶部一条置顶细条：今天是哪种日子 · 当前计划块和剩余时间 · 正在记录的活动。点一个 bucket 就结束上一段、
 写进 ②Actual、开始下一段；描述可选（输入框里打字回车，按关键词猜 bucket）。工作直接切到「玩」时会问要不要先收尾 12 分钟；
 休息日 / 回来日上午 / 事件后点 main、side，会提示一次，再点一次照样开始。关掉浮动条不会停止记录
-（进行中那段存在 `data/running.json`），拖动可移位置；双击条或右键可收起成小条；右键还能取消置顶、刷新、回到顶部、退出（收起和置顶状态会记住）。找不到条了，就再开一次（Spotlight 打开 app，或 `timeplanner softbar`），它会把正在跑的那个调回屏幕上。
+（进行中那段存在 `data/running.json`），拖动可移位置；双击条或右键可收起成小条；右键还能取消置顶、刷新、回到顶部、退出（收起和置顶状态会记住）。菜单栏（Windows 是托盘）里有个小圆点，颜色就是正在记的 bucket；右键浮动条「收进菜单栏」可以把条藏进去，点圆点的菜单能直接切 bucket、停止、或「显示浮动条」。找不到条了，就再开一次（Spotlight 打开 app，或 `timeplanner softbar`），它会把正在跑的那个调回屏幕上。
 
 想让它像个 app 一样常驻：`timeplanner softbar --install`。macOS 会建 `~/Applications/TimePlanner Softbar.app`
 （Spotlight 能搜到、Dock 不显示图标）并登录自启、崩了自动重启；Windows 放一个开机启动项。同时只会有一个浮动条。

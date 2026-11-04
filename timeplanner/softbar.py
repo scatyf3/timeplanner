@@ -12,7 +12,9 @@ Soft prompts, never blocks:
 
 Closing the bar does not stop the recording: the running segment lives in data/running.json,
 so reopening the bar (or `timeplanner rec stop`) picks it up. Drag to move; position is remembered.
-Right-click: collapse to a small pill (or double-click the bar), turn always-on-top off/on — both remembered.
+Right-click: collapse to a small pill (or double-click the bar), tuck it into the menu bar icon, turn
+always-on-top off/on — all remembered. The menu bar dot (Windows: tray) shows the bucket being recorded and
+its menu switches buckets / stops / brings the bar back.
 Works on macOS and Windows (PySide6, `pip install -e '.[softbar]'`).
 """
 
@@ -22,9 +24,9 @@ import datetime as dt
 import sys
 
 from PySide6.QtCore import QPoint, QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QFont, QPalette
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLayout, QLineEdit, QMenu,
-                               QPushButton, QWidget)
+                               QPushButton, QSystemTrayIcon, QWidget)
 
 from .core import recovery, running
 from .core.gcal import BUCKET_HEX
@@ -169,6 +171,7 @@ class SoftBar(QWidget):
 
     def bring_back(self) -> None:
         """Make the bar visible again on-screen (a second `timeplanner softbar` / app open calls this)."""
+        self._settings.setValue("tucked", False)
         self._place()
         self.show()
         self.raise_()
@@ -207,6 +210,7 @@ class SoftBar(QWidget):
         else:
             self.rec.setStyleSheet(f"color:{QUIET}; padding:0 6px;")
             _set(self.rec, "⏸ 未在记录")
+        self._update_tray()
 
     def flash(self, text: str) -> None:
         _set(self.msg, text)
@@ -228,10 +232,14 @@ class SoftBar(QWidget):
             p = self._pending
             if not (p and p[0] == bucket and (dt.datetime.now() - p[1]).total_seconds() < CONFIRM_WINDOW_S):
                 self._pending = (bucket, dt.datetime.now())
+                if not self.isVisible():
+                    self.bring_back()
                 self.flash(f"{note}（再点一次 {BUCKET_LABEL[bucket]}）")
                 return
         self._pending = None
         if running.wants_wind_down(bucket):
+            if not self.isVisible():
+                self.bring_back()
             self._ask_wind_down()
             return
         self._start(bucket, self.summary.text())
@@ -328,12 +336,77 @@ class SoftBar(QWidget):
         menu = QMenu(self)
         items = (("展开" if self._collapsed else "收起成小条（双击条也行）", lambda: self._set_collapsed(not self._collapsed)),
                  ("取消置顶" if self._on_top else "置顶", self._toggle_on_top),
-                 ("刷新", self.refresh), ("回到屏幕顶部", self._reset_pos), ("退出（不停止记录）", self.close))
+                 *((("收进菜单栏", self.tuck),) if getattr(self, "tray", None) else ()),
+                 ("刷新", self.refresh), ("回到屏幕顶部", self._reset_pos), ("退出（不停止记录）", QApplication.quit))
         for label, fn in items:
             act = QAction(label, menu)
             act.triggered.connect(fn)
             menu.addAction(act)
         menu.exec(e.globalPos())
+
+    # ---- menu bar / tray icon ----
+
+    def attach_tray(self) -> None:
+        """A dot in the macOS menu bar (Windows: system tray) colored by what's being recorded. Its menu switches
+        buckets, stops, and shows/hides the bar, so the bar can live tucked away in it."""
+        self.tray = QSystemTrayIcon(self)
+        self._tray_menu = QMenu()
+        self._tray_menu.aboutToShow.connect(self._fill_tray_menu)
+        self.tray.setContextMenu(self._tray_menu)
+        self.tray.activated.connect(self._tray_clicked)
+        self._tray_key = None
+        self._update_tray()
+        self.tray.show()
+
+    def _fill_tray_menu(self) -> None:
+        m = self._tray_menu
+        m.clear()
+        r = running.current()
+        head = m.addAction(running.status_text())
+        head.setEnabled(False)
+        m.addSeparator()
+        for b in BUCKET_ORDER:
+            act = m.addAction(("● " if r and r.bucket == b else "   ") + BUCKET_LABEL[b])
+            act.triggered.connect(lambda _=False, b=b: self.choose(b))
+        m.addAction("■ 停止记录").triggered.connect(self.stop)
+        m.addSeparator()
+        if self.isVisible():
+            m.addAction("收进菜单栏").triggered.connect(self.tuck)
+        else:
+            m.addAction("显示浮动条").triggered.connect(self.untuck)
+        m.addAction("退出（不停止记录）").triggered.connect(QApplication.quit)
+
+    def _tray_clicked(self, reason) -> None:
+        if reason == QSystemTrayIcon.ActivationReason.Trigger and sys.platform != "darwin":
+            self.untuck() if not self.isVisible() else self.tuck()   # Windows: left-click toggles the bar
+
+    def _update_tray(self) -> None:
+        if not getattr(self, "tray", None):
+            return
+        r = running.current()
+        key = r.bucket if r else None
+        if key != self._tray_key:                       # repaint the dot only when the bucket changes
+            self._tray_key = key
+            pm = QPixmap(36, 36)
+            pm.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QColor(QUIET) if not r else Qt.PenStyle.NoPen)
+            p.setBrush(QColor(BUCKET_HEX.get(key, "#888")) if r else Qt.BrushStyle.NoBrush)
+            p.drawEllipse(6, 6, 24, 24)
+            p.end()
+            self.tray.setIcon(QIcon(pm))
+        self.tray.setToolTip(running.status_text())
+
+    def tuck(self) -> None:
+        """Hide the bar into the menu bar icon (remembered)."""
+        if getattr(self, "tray", None):
+            self.hide()
+            self._settings.setValue("tucked", True)
+
+    def untuck(self) -> None:
+        self._settings.setValue("tucked", False)
+        self.bring_back()
 
     def _reset_pos(self) -> None:
         self._settings.remove("pos")
@@ -411,12 +484,16 @@ def run() -> int:
         return 0
     app = QApplication.instance() or QApplication(sys.argv)
     _hide_dock_icon()
-    app.setQuitOnLastWindowClosed(True)
+    app.setQuitOnLastWindowClosed(False)        # the bar may be tucked into the menu bar; quit via 退出
     pal = app.palette()
     pal.setColor(QPalette.ColorRole.ToolTipBase, QColor("#222"))
     app.setPalette(pal)
     bar = SoftBar()
-    bar.show()
+    has_tray = QSystemTrayIcon.isSystemTrayAvailable()
+    if has_tray:
+        bar.attach_tray()
+    if not (has_tray and bar._settings.value("tucked", False, type=bool)):
+        bar.show()
     QLocalServer.removeServer(_SERVER)          # a stale socket from a crash would block listen()
     server = QLocalServer()
     server.newConnection.connect(lambda: (server.nextPendingConnection(), bar.bring_back()))
