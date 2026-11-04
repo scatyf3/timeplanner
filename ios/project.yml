@@ -1,0 +1,38 @@
+# XcodeGen spec: `brew install xcodegen && xcodegen generate` → TimePlanner.xcodeproj (the .xcodeproj is not committed).
+name: TimePlanner
+options:
+  bundleIdPrefix: com.scatyf3
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  TimePlannerCore:
+    path: Core
+targets:
+  TimePlanner:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: TimePlannerCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: TimePlanner
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCalendarsFullAccessUsageDescription: 把记下的时间段写进你选的日历（比如同步到 Google 的「Actual」）。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.scatyf3.timeplanner
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+schemes:
+  TimePlanner:
+    build:
+      targets:
+        TimePlanner: all

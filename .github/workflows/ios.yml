@@ -1,0 +1,24 @@
+name: ios
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core unit tests (swift test)
+        working-directory: ios/Core
+        run: swift test
+      - name: Generate Xcode project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build app for iOS Simulator (no signing)
+        working-directory: ios
+        run: |
+          xcodebuild -project TimePlanner.xcodeproj -scheme TimePlanner \
+            -destination 'generic/platform=iOS Simulator' -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO build | tail -40
