@@ -165,6 +165,8 @@ def day_mode(date: dt.date | None = None,
                  "收工前先写下回来后的第一件事（5 分钟能开始），再玩。"]
         if is_rest:
             rules.append("今天本来就是休息日：事件之外不排工作，明天正常回来，不额外再休。")
+        elif rest_weekday() == (date + dt.timedelta(days=1)).weekday():
+            rules.append("明天本来就是休息日，恢复并进去，后天正常回来。")
         else:
             rules.append("明天上午也 off，下午回到主场。")
         return DayMode(date, POST_EVENT, f"今天有大事件：{names}", off, rules)
