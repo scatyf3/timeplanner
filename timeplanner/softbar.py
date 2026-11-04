@@ -15,6 +15,9 @@ so reopening the bar (or `timeplanner rec stop`) picks it up. Drag to move; posi
 Right-click: collapse to a small pill (or double-click the bar), tuck it into the menu bar icon, turn
 always-on-top off/on — all remembered. The menu bar dot (Windows: tray) shows the bucket being recorded and
 its menu switches buckets / stops / brings the bar back.
+Auto-stop (core/running.autostop_reason): a main/side/fun segment ends by itself when the computer sleeps
+(ended at the last tick before the gap), sits idle 20 min (ended when input stopped), or the bar was gone
+(ended at its last heartbeat). Life/health keep running — you're away from the computer for those.
 Works on macOS and Windows (PySide6, `pip install -e '.[softbar]'`).
 """
 
@@ -123,14 +126,20 @@ class SoftBar(QWidget):
             row.insertWidget(row.indexOf(self.msg) + 1, w)
 
         self._style_buttons()
-        self._tick = QTimer(self, interval=1000, timeout=self._render_running)
+        self._last_tick = running._now()
+        self._ticks = 0
+        self._tick = QTimer(self, interval=1000, timeout=self._on_tick)
         self._slow = QTimer(self, interval=SLOW_REFRESH_MS, timeout=self.refresh)
         self._nudge = QTimer(self, singleShot=True, timeout=self._nudge_fun)
         self._clear = QTimer(self, singleShot=True, timeout=lambda: (_set(self.msg, ""), self.adjustSize()))
         self._tick.start()
         self._slow.start()
+        recovered = running.recover_on_start()      # e.g. the Mac was shut down mid-segment
+        running.heartbeat()
         self.refresh()
         self._set_collapsed(self._settings.value("collapsed", False, type=bool))
+        if recovered and recovered[0]:
+            QTimer.singleShot(1500, lambda: self._announce_stop(recovered[0], recovered[1]))
         self._place()
 
     # ---- layout / look ----
@@ -200,6 +209,37 @@ class SoftBar(QWidget):
         else:
             _set(self.plan, "没有后续计划块")
         self._render_running()
+
+    def _on_tick(self) -> None:
+        """Every second: redraw the timer; every 30 s check idle; every minute heartbeat. Auto-stop on sleep/idle."""
+        now = running._now()
+        self._ticks += 1
+        idle_s = None
+        if self._ticks % 30 == 0:
+            from .core import idle
+            idle_s = idle.idle_seconds()
+        hit = running.autostop_reason(running.current(), now, self._last_tick, idle_s)
+        self._last_tick = now
+        if hit:
+            end, why = hit
+            try:
+                written = running.stop(end)
+            except Exception as e:  # noqa: BLE001 — e.g. GCal offline after wake
+                self.flash(f"自动结束失败：{e}")
+                written = []
+            if written:
+                self._announce_stop(written, why)
+        if self._ticks % 60 == 0:
+            running.heartbeat(now)
+        self._render_running()
+
+    def _announce_stop(self, written, why: str) -> None:
+        e = written[-1]
+        text = f"{why}，已在 {e.end:%H:%M} 自动结束「{e.summary}」"
+        self.flash(text)
+        self._style_buttons()
+        if getattr(self, "tray", None):
+            self.tray.showMessage("TimePlanner", text, QSystemTrayIcon.MessageIcon.Information, 8000)
 
     def _render_running(self) -> None:
         r = running.current()

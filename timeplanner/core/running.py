@@ -102,6 +102,55 @@ def start(bucket: str, summary: str = "", now: dt.datetime | None = None) -> tup
     return r, written
 
 
+# ---- auto-stop: sleep / idle / the bar was gone (the softbar calls these) ----
+
+SLEEP_GAP = dt.timedelta(minutes=2)       # wall clock jumped this much between 1-second ticks → the machine slept
+
+
+def autostop_reason(r: Running | None, now: dt.datetime, last_tick: dt.datetime | None,
+                    idle_s: float | None) -> tuple[dt.datetime, str] | None:
+    """(when the segment really ended, why) if it should auto-stop now, else None. Pure, for testing.
+
+    Sleep wins over idle: after a wake the idle counter also covers the sleep, but the last tick is exact."""
+    if not r or r.bucket not in config.autostop_buckets:
+        return None
+    if last_tick and now - last_tick > SLEEP_GAP and last_tick > r.start:
+        return last_tick, "电脑睡眠/待机"
+    limit = config.autostop_idle_min
+    if limit > 0 and idle_s is not None and idle_s >= limit * 60:
+        end = now - dt.timedelta(seconds=idle_s)
+        if end > r.start:
+            return end, f"{int(idle_s // 60)} 分钟没操作电脑"
+    return None
+
+
+def _beat_file():
+    return config.data_dir / "softbar.heartbeat"
+
+
+def heartbeat(now: dt.datetime | None = None) -> None:
+    """The bar says it's alive (every minute), so a later start can tell when it — or the computer — went away."""
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    _beat_file().write_text((now or _now()).isoformat(), encoding="utf-8")
+
+
+def recover_on_start(now: dt.datetime | None = None) -> tuple[list[Event], str] | None:
+    """On bar start: a segment that was running while the bar (or the computer) was gone for a while ends at
+    the last heartbeat, e.g. after a shutdown. Only when the bar was alive during that segment."""
+    now = now or _now()
+    r = current()
+    p = _beat_file()
+    if not r or r.bucket not in config.autostop_buckets or not p.is_file():
+        return None
+    try:
+        last = dt.datetime.fromisoformat(p.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return None
+    if last <= r.start or now - last <= SLEEP_GAP:
+        return None
+    return stop(last), f"浮动条/电脑在 {last:%H:%M} 之后就没在跑了"
+
+
 # ---- soft prompts (the softbar asks; nothing here blocks) ----
 
 def wants_wind_down(new_bucket: str) -> bool:

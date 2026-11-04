@@ -96,6 +96,12 @@ class Config:
             "面试,interview,phone screen,oa,coding test").split(",")
         if s.strip()])
 
+    # softbar auto-stop: end the running segment when the computer sleeps or sits idle this long.
+    # Only for buckets done at the computer — life/health keep running while you're away.
+    autostop_idle_min: float = field(default_factory=lambda: float(_get("TIMEPLANNER_AUTOSTOP_IDLE_MIN", "20")))
+    autostop_buckets: set = field(default_factory=lambda: {
+        s.strip().lower() for s in _get("TIMEPLANNER_AUTOSTOP_BUCKETS", "main,side,fun").split(",") if s.strip()})
+
     # principles library
     principles_path: Path = field(default_factory=lambda: REPO_ROOT / "principles.md")
 
