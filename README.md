@@ -60,7 +60,7 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 优先级：大事件当天 > 休息日 > 回来日 > 小事件当天。大事件在休息日前一天时，恢复并进休息日，不额外再休。
 另外每天都检查：fun 紧跟 main/side 时提醒中间加 10–15min 收尾（写 next action → 收拾房间 → 玩）。
 事件来源：订阅日历、Plan 里手建的外部事件、Actual 记录、项目笔记里当天的 📅 deadline；planner 自己排的块和「准备/mock/复盘」这类不算。
-规则原文见 `principles.md`「休息与恢复」。
+规则原文见 `principles.md`「休息与恢复」。设计与改动总览见 [docs/休息与恢复-softbar-提案.md](docs/休息与恢复-softbar-提案.md)。
 
 ### 浮动条 softbar 与多端
 
