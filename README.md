@@ -44,6 +44,22 @@ timeplanner summary           # M1：笔记/AW/天气/日历 只读汇总
 写入流程（辅助式）：`plan`（agent stage 草案）→ `confirm`（看 diff）→ `confirm --yes`（落地）。
 本地 timeline 存在 `data/plan.json` / `data/actual.json`（gitignore），schema 与 GCal 事件一致。
 
+### 休息与恢复
+
+`core/recovery.py` 每天判断今天是哪种日子，plan 按它排，`confirm` 和 `stage_plan` 会给软提醒（不拦截）：
+
+| 日子 | 怎么判断 | 怎么排 |
+|---|---|---|
+| 休息日 | `TIMEPLANNER_REST_WEEKDAY`（默认周六） | 全天不排 main/side |
+| 大事件当天 | 当天事件/📅 deadline 命中大事件关键词（终面、onsite、deadline、投稿…） | 事件结束后 off |
+| 回来日 | 昨天有大事件 | 上午 off，下午回主场，底线一件小事 |
+| 小事件当天 | 命中小事件关键词（面试、phone screen…） | 面完那个晚上 off |
+
+优先级：大事件当天 > 休息日 > 回来日 > 小事件当天。大事件在休息日前一天时，恢复并进休息日，不额外再休。
+另外每天都检查：fun 紧跟 main/side 时提醒中间加 10–15min 收尾（写 next action → 收拾房间 → 玩）。
+事件来源：订阅日历、Plan 里手建的外部事件、Actual 记录、项目笔记里当天的 📅 deadline；planner 自己排的块和「准备/mock/复盘」这类不算。
+规则原文见 `principles.md`「休息与恢复」。
+
 ### Planner 记忆（自进化雏形）
 
 plan/reflect 时 agent 可用 `remember_thought` / `remember_principle` 把**规划思考**和\

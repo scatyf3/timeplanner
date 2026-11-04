@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 
 from ..config import config
-from . import classify, gcal, timeline
+from . import classify, gcal, recovery, timeline
 from .gcal import Event, norm_bucket
 
 
@@ -41,6 +41,10 @@ def confirm(date: dt.date | None = None, dry_run: bool = True) -> str:
     tgt = "GCal Plan 日历" if name() == "gcal" else "本地 Plan timeline"
     head = f"# ✅ 确认写入 {tgt} —— {date:%Y-%m-%d}" + ("  （DRY RUN，未写）" if dry_run else "")
     lines = [head] + [f"+ {e.line()}" for e in proposed]
+    warns = recovery.lint_plan(recovery.day_mode(date), proposed)
+    if warns:
+        lines.append("\n⚠️ 休息与恢复提醒（不拦截，你决定）：")
+        lines += [f"  - {w}" for w in warns]
     if dry_run:
         lines.append("\n加 --yes 落地：`timeplanner confirm --yes`")
         return "\n".join(lines)

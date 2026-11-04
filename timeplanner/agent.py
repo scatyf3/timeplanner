@@ -13,8 +13,8 @@ import datetime as dt
 import json
 
 from .config import config
-from .core import (activitywatch, backend, cubox, gcal, memory, notes, observations, timeline,
-                   weather, weekly)
+from .core import (activitywatch, backend, cubox, gcal, memory, notes, observations, recovery,
+                   timeline, weather, weekly)
 
 
 def load_principles() -> str:
@@ -30,6 +30,7 @@ def gather_context(date: dt.date | None = None) -> str:
         notes.summary(date),
         activitywatch.summary(date),
         weather.summary(date),
+        recovery.summary(date),
         backend.summary(date, "plan"),
     ]
     refs = gcal.refs_summary(date)   # subscribed calendars → external fixed constraints
@@ -58,6 +59,14 @@ SYSTEM_PROMPT = """你是 TimePlanner，一个**辅助式**时间规划 agent。
 3. workload 推断已有规则给出建议 block 数，你可微调但要说明理由。
 4. 每块到点物理硬停；专注 block 默认 90min。
 5. 天气不好时把「生活/身体」那格挪室内。
+6. 休息与恢复（排 plan 前**先调 recovery_status** 看今天是哪种日子，按它排）：
+   - 休息日：全天不排 main/side，也别排「半办公」；只排 life/fun/health，出门最好。
+   - 大事件当天（终面/onsite/deadline/投稿）：事件结束后全 off；收工前留一个 5 分钟能开始的回来动作。
+   - 回来日（昨天大事件）：上午 off，下午回主场，底线只有一件小事；别安排「补进度」。
+   - 小事件当天（普通面试）：面完那个晚上 off，明天照常。
+   - 每天：fun 紧跟在 main/side 后面时，中间加 10–15min life 收尾（写 next action → 收拾房间 → 玩）。
+   - 休息是排好的，不是逃避：措辞里别带愧疚感，也别劝 ta 把休息日缩成半天。
+   stage_plan 会返回休息与恢复提醒；有提醒就改了再 stage，或说明为什么保留。
 
 输出面向终端，务必克制篇幅：
 - **别用宽 Markdown 表格**（终端会折行成一团）；timeline 用「时间 — 块 — 事件」的短行列表。
@@ -119,6 +128,14 @@ def build_options():
             text += "\n\n" + refs
         return {"content": [{"type": "text", "text": text}]}
 
+    @tool("recovery_status",
+          "今天是哪种日子：休息日 / 大事件当天 / 小事件当天 / 回来日 / 普通日，及对应排班规则。"
+          "按订阅日历、Actual 记录和 📅 deadline 里的面试/deadline 关键词判断。",
+          {"date": str})
+    async def recovery_status(args):
+        d = _parse_date(args.get("date"))
+        return {"content": [{"type": "text", "text": recovery.summary(d)}]}
+
     @tool("stage_plan",
           "把今日 timeline 草案 stage 到待确认区（人跑 `timeplanner confirm` 才真写）。"
           "events_json 是 JSON 数组，每项 {start:'HH:MM', end:'HH:MM', bucket:'main|side|life|health|fun', summary:'...'}",
@@ -131,8 +148,10 @@ def build_options():
             return {"content": [{"type": "text", "text": f"⚠️ events_json 解析失败：{e}"}]}
         evs = timeline.stage_plan(d, spec)
         body = "\n".join(f"  {e.line(color=False)}" for e in evs)
+        warns = recovery.lint_plan(recovery.day_mode(d), evs)
+        lint = ("\n⚠️ 休息与恢复提醒：\n" + "\n".join(f"  - {w}" for w in warns)) if warns else ""
         return {"content": [{"type": "text",
-                "text": f"🗂️ 已 stage {len(evs)} 个事件，等人确认：\n{body}\n"
+                "text": f"🗂️ 已 stage {len(evs)} 个事件，等人确认：\n{body}{lint}\n"
                         f"让 ta 跑 `timeplanner confirm` 预览、`timeplanner confirm --yes` 落地。"}]}
 
     @tool("weekly_context",
@@ -217,7 +236,7 @@ def build_options():
     server = create_sdk_mcp_server(
         name="timeplanner",
         version="0.1.0",
-        tools=[notes_summary, aw_summary, weather_summary, timeline_read, stage_plan,
+        tools=[notes_summary, aw_summary, weather_summary, timeline_read, recovery_status, stage_plan,
                weekly_context, stage_weekly, stage_weekly_insights, cubox_search,
                observations_search, remember_observation, remember_thought, remember_principle],
     )
@@ -226,6 +245,7 @@ def build_options():
         "mcp__timeplanner__activitywatch_summary",
         "mcp__timeplanner__weather_summary",
         "mcp__timeplanner__timeline_read",
+        "mcp__timeplanner__recovery_status",
         "mcp__timeplanner__stage_plan",
         "mcp__timeplanner__weekly_context",
         "mcp__timeplanner__stage_weekly",
@@ -257,6 +277,7 @@ _TOOL_LABEL = {
     "activitywatch_summary": "读 ActivityWatch",
     "weather_summary": "读天气",
     "timeline_read": "读 Plan/Actual timeline",
+    "recovery_status": "看今天是哪种日子",
     "stage_plan": "暂存 plan 草案",
     "weekly_context": "读本周时间/项目",
     "stage_weekly": "暂存本周汇总",

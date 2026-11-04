@@ -81,6 +81,21 @@ class Config:
         s.strip() for s in _get("TIMEPLANNER_CUBOX_FOLDERS", "科学学习,科学工作,health,心理").split(",")
         if s.strip()])
 
+    # rest & recovery (core/recovery.py). rest_weekday: the weekly full day off
+    # (mon..sun / 周一..周日 / 0..6 Mon=0; empty = off). Event keywords are matched
+    # case-insensitively against calendar/timeline event summaries and 📅 deadlines.
+    rest_weekday: str = field(default_factory=lambda: _get("TIMEPLANNER_REST_WEEKDAY", "sat"))
+    big_event_keywords: list[str] = field(default_factory=lambda: [
+        s.strip().lower() for s in _get(
+            "TIMEPLANNER_BIG_EVENT_KEYWORDS",
+            "onsite,终面,final round,deadline,ddl,投稿,submission,答辩,defense,大面").split(",")
+        if s.strip()])
+    minor_event_keywords: list[str] = field(default_factory=lambda: [
+        s.strip().lower() for s in _get(
+            "TIMEPLANNER_MINOR_EVENT_KEYWORDS",
+            "面试,interview,phone screen,oa,coding test").split(",")
+        if s.strip()])
+
     # principles library
     principles_path: Path = field(default_factory=lambda: REPO_ROOT / "principles.md")
 

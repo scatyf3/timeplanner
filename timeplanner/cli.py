@@ -16,7 +16,7 @@ import datetime as dt
 import sys
 
 from .config import config
-from .core import activitywatch, aw_sync, backend, cubox, gcal, memory, notes, rollover, weather
+from .core import activitywatch, aw_sync, backend, cubox, gcal, memory, notes, recovery, rollover, weather
 
 
 def _date(s: str | None) -> dt.date:
@@ -80,6 +80,7 @@ def cmd_summary(args) -> int:
     print(notes.summary(d))
     print("\n" + aw_sync.summary(d))
     print("\n" + weather.summary(d))
+    print("\n" + recovery.summary(d))
     print("\n" + backend.summary(d, "plan"))
     print("\n" + backend.summary(d, "actual"))
     refs = gcal.refs_summary(d)

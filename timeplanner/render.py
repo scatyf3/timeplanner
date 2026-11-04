@@ -12,7 +12,7 @@ import datetime as dt
 
 import unicodedata
 
-from .core import activitywatch, aw_sync, backend, gcal, notes, weather, weekly
+from .core import activitywatch, aw_sync, backend, gcal, notes, recovery, weather, weekly
 
 SLOT_MIN = 30                     # timeline row granularity
 _OBSERVED_HEX = "#8899a6"         # neutral gray for AW active spans (no bucket)
@@ -446,6 +446,8 @@ def render(date: dt.date) -> None:
     console.print(Markdown(notes.summary(date)))
     console.print()
     console.print(Markdown(weather.summary(date)))
+    console.print()
+    console.print(Markdown(recovery.summary(date)))
     console.print(Rule(style="dim"))
     console.print(_timeline_table(date, plan, actual, observed))
     console.print(_aw_breakdown(obs))
