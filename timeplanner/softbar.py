@@ -55,7 +55,11 @@ class SoftBar(QWidget):
     def __init__(self) -> None:
         self._settings = QSettings("timeplanner", "softbar")
         self._on_top = self._settings.value("on_top", True, type=bool)
-        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        flags = Qt.WindowType.FramelessWindowHint
+        if sys.platform != "darwin":
+            # Windows: Tool keeps it off the taskbar. macOS: NOT Tool — a Tool window is an NSPanel that hides
+            # whenever another app is frontmost (that's how the bar "disappeared"); the Dock icon is hidden instead.
+            flags |= Qt.WindowType.Tool
         if self._on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
         super().__init__(None, flags)
@@ -152,11 +156,23 @@ class SoftBar(QWidget):
     def _place(self) -> None:
         self.adjustSize()
         pos = self._settings.value("pos")
-        if isinstance(pos, QPoint):
+        # a remembered spot on a monitor that's gone (or off the edge) → back to the top of the main screen
+        if isinstance(pos, QPoint) and any(s.availableGeometry().contains(pos) for s in QApplication.screens()):
             self.move(pos)
             return
         scr = QApplication.primaryScreen().availableGeometry()
         self.move(scr.x() + (scr.width() - self.width()) // 2, scr.y() + 8)
+
+    def showEvent(self, e) -> None:  # noqa: N802
+        super().showEvent(e)
+        _mac_pin(self, self._on_top)
+
+    def bring_back(self) -> None:
+        """Make the bar visible again on-screen (a second `timeplanner softbar` / app open calls this)."""
+        self._place()
+        self.show()
+        self.raise_()
+        _mac_pin(self, self._on_top)
 
     # ---- rendering ----
 
@@ -301,6 +317,7 @@ class SoftBar(QWidget):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self._on_top)
         self.show()          # changing window flags hides the window; show it again where it was
         self.move(pos)
+        _mac_pin(self, self._on_top)
 
     def mouseReleaseEvent(self, e) -> None:  # noqa: N802
         if self._drag is not None:
@@ -343,15 +360,54 @@ def _hide_dock_icon() -> None:
         pass
 
 
+def _mac_pin(w: QWidget, on_top: bool) -> None:
+    """macOS: never hide when another app is frontmost, show on every Space and over full-screen apps,
+    and sit at the status-bar level when on top. Plain Qt can't say these; done via the ObjC runtime."""
+    if sys.platform != "darwin":
+        return
+    try:
+        import ctypes
+        import ctypes.util
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        objc.sel_registerName.restype = ctypes.c_void_p
+        sel = objc.sel_registerName
+        send = objc.objc_msgSend
+        send.restype = ctypes.c_void_p
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        win = send(ctypes.c_void_p(int(w.winId())), sel(b"window"))     # winId() is the NSView
+        if not win:
+            return
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+        send(win, sel(b"setHidesOnDeactivate:"), False)
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+        # CanJoinAllSpaces | Stationary | FullScreenAuxiliary
+        send(win, sel(b"setCollectionBehavior:"), (1 << 0) | (1 << 4) | (1 << 8))
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        send(win, sel(b"setLevel:"), 25 if on_top else 0)              # NSStatusWindowLevel / normal
+    except Exception:  # noqa: BLE001 — best effort; the bar still works with Qt's own on-top flag
+        pass
+
+
+_SERVER = "timeplanner-softbar"
+
+
 def run() -> int:
     from PySide6.QtCore import QLockFile
+    from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
     from .config import config
 
     config.data_dir.mkdir(parents=True, exist_ok=True)
     lock = QLockFile(str(config.data_dir / "softbar.lock"))
-    if not lock.tryLock(200):   # login autostart + a manual open → still one bar
-        print("浮动条已经在跑了。")
+    if not lock.tryLock(200):   # already running → ask that bar to come back on screen, then leave
+        sock = QLocalSocket()
+        sock.connectToServer(_SERVER)
+        if sock.waitForConnected(1000):
+            sock.write(b"show")
+            sock.waitForBytesWritten(1000)
+            print("浮动条已经在跑了，已经把它调回屏幕上。")
+        else:
+            print("浮动条已经在跑了（没能叫醒它：右键菜单里「回到屏幕顶部」，或重启它）。")
         return 0
     app = QApplication.instance() or QApplication(sys.argv)
     _hide_dock_icon()
@@ -361,6 +417,10 @@ def run() -> int:
     app.setPalette(pal)
     bar = SoftBar()
     bar.show()
+    QLocalServer.removeServer(_SERVER)          # a stale socket from a crash would block listen()
+    server = QLocalServer()
+    server.newConnection.connect(lambda: (server.nextPendingConnection(), bar.bring_back()))
+    server.listen(_SERVER)
     return app.exec()
 
 
