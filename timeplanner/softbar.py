@@ -12,6 +12,7 @@ Soft prompts, never blocks:
 
 Closing the bar does not stop the recording: the running segment lives in data/running.json,
 so reopening the bar (or `timeplanner rec stop`) picks it up. Drag to move; position is remembered.
+Right-click: collapse to a small pill (or double-click the bar), turn always-on-top off/on — both remembered.
 Works on macOS and Windows (PySide6, `pip install -e '.[softbar]'`).
 """
 
@@ -52,13 +53,16 @@ def _chip(text: str, color: str = QUIET) -> QLabel:
 
 class SoftBar(QWidget):
     def __init__(self) -> None:
-        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-                         | Qt.WindowType.Tool)
+        self._settings = QSettings("timeplanner", "softbar")
+        self._on_top = self._settings.value("on_top", True, type=bool)
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        if self._on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        super().__init__(None, flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("TimePlanner softbar")
         self._drag: QPoint | None = None
         self._pending: tuple[str, dt.datetime] | None = None   # (bucket, when) awaiting a second click
-        self._settings = QSettings("timeplanner", "softbar")
         f = QFont()
         f.setFamilies(["PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
         f.setPointSize(12)
@@ -87,7 +91,8 @@ class SoftBar(QWidget):
         self.summary.returnPressed.connect(self._enter)
 
         self.buttons: dict[str, QPushButton] = {}
-        for w in (self.mode, self._sep(), self.plan, self._sep(), self.rec, self.msg):
+        self._seps = [self._sep(), self._sep()]
+        for w in (self.mode, self._seps[0], self.plan, self._seps[1], self.rec, self.msg):
             row.addWidget(w)
         row.addStretch(1)
         row.addWidget(self.summary)
@@ -119,6 +124,7 @@ class SoftBar(QWidget):
         self._tick.start()
         self._slow.start()
         self.refresh()
+        self._set_collapsed(self._settings.value("collapsed", False, type=bool))
         self._place()
 
     # ---- layout / look ----
@@ -277,6 +283,25 @@ class SoftBar(QWidget):
         if self._drag is not None and e.buttons() & Qt.MouseButton.LeftButton:
             self.move(e.globalPosition().toPoint() - self._drag)
 
+    def mouseDoubleClickEvent(self, e) -> None:  # noqa: N802 — double-click the bar: collapse / expand
+        self._set_collapsed(not self._collapsed)
+
+    def _set_collapsed(self, on: bool) -> None:
+        """Collapsed = only the day mode + what's being recorded; the plan, input and buttons hide."""
+        self._collapsed = on
+        for w in (*self._seps, self.plan, self.summary, *self.buttons.values(), self.stop_btn):
+            w.setVisible(not on)
+        self._settings.setValue("collapsed", on)
+        self.adjustSize()
+
+    def _toggle_on_top(self) -> None:
+        self._on_top = not self._on_top
+        self._settings.setValue("on_top", self._on_top)
+        pos = self.pos()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self._on_top)
+        self.show()          # changing window flags hides the window; show it again where it was
+        self.move(pos)
+
     def mouseReleaseEvent(self, e) -> None:  # noqa: N802
         if self._drag is not None:
             self._settings.setValue("pos", self.pos())
@@ -284,7 +309,10 @@ class SoftBar(QWidget):
 
     def contextMenuEvent(self, e) -> None:  # noqa: N802
         menu = QMenu(self)
-        for label, fn in (("刷新", self.refresh), ("回到屏幕顶部", self._reset_pos), ("退出（不停止记录）", self.close)):
+        items = (("展开" if self._collapsed else "收起成小条（双击条也行）", lambda: self._set_collapsed(not self._collapsed)),
+                 ("取消置顶" if self._on_top else "置顶", self._toggle_on_top),
+                 ("刷新", self.refresh), ("回到屏幕顶部", self._reset_pos), ("退出（不停止记录）", self.close))
+        for label, fn in items:
             act = QAction(label, menu)
             act.triggered.connect(fn)
             menu.addAction(act)
