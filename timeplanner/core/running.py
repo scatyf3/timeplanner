@@ -21,6 +21,7 @@ from . import backend, recovery
 from .gcal import BUCKETS, Event, norm_bucket
 
 MIN_SEGMENT = dt.timedelta(minutes=1)
+ASK_DONE_MIN = dt.timedelta(minutes=5)        # segments shorter than this (a mis-click, a quick switch) aren't asked about
 WIND_DOWN = dt.timedelta(minutes=12)          # how long the 收尾 segment runs before nudging to fun
 DEFAULT_SUMMARY = {"main": "main", "side": "side", "life": "生活", "health": "健康", "fun": "玩"}
 WIND_DOWN_SUMMARY = "收尾：写 next action + 收拾桌面"
@@ -100,6 +101,25 @@ def start(bucket: str, summary: str = "", now: dt.datetime | None = None) -> tup
     r = Running(bucket, summary.strip() or DEFAULT_SUMMARY[bucket], now)
     _save(r)
     return r, written
+
+
+def describe(written: list[Event], text: str) -> int:
+    """Write "what I did" into the description of a just-ended segment — every piece of it when it was split
+    at midnight. Returns how many events were filled; blank text writes nothing."""
+    text = text.strip()
+    if not text:
+        return 0
+    ids = [e.event_id for e in written if e.event_id]
+    for i in ids:
+        backend.set_description(i, text)
+    for e in written:
+        e.description = text
+    return len(ids)
+
+
+def worth_asking(written: list[Event]) -> bool:
+    """Ask "干了啥" only for a segment long enough to have been about something."""
+    return bool(written) and sum((e.end - e.start for e in written), dt.timedelta()) >= ASK_DONE_MIN
 
 
 # ---- auto-stop: sleep / idle / the bar was gone (the softbar calls these) ----

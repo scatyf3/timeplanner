@@ -98,6 +98,7 @@ class Event:
     external: bool = False    # no timeplanner marker → True
     all_day: bool = False     # all-day event (holiday/birthday) → informational, not a time block
     color_id: str = ""        # GCal event colorId (empty = calendar default)
+    description: str = ""     # the event's notes box ("干了啥" written after a recorded segment ends)
 
     def color_hex(self) -> str | None:
         """Resolve a hex color: prefer our bucket scheme, else fall back to the event's own GCal color."""
@@ -175,6 +176,7 @@ def _to_event(item: dict) -> Event:
         external=not is_ours,
         all_day=_is_all_day(item),
         color_id=str(item.get("colorId", "")),
+        description=item.get("description", "") or "",
     )
 
 
@@ -287,6 +289,7 @@ def refs_summary(date: dt.date | None = None, color: bool | None = None) -> str:
 
 
 def _insert(svc, cal: str, e: Event) -> None:
+    """Insert e (with marker + bucket color); e.event_id is set to the new event's id."""
     bucket = norm_bucket(e.bucket)
     body = {
         "summary": e.summary,
@@ -297,7 +300,9 @@ def _insert(svc, cal: str, e: Event) -> None:
     color = BUCKET_COLOR_ID.get(bucket)
     if color:
         body["colorId"] = color  # color-code by bucket to match the Time Record scheme
-    svc.events().insert(calendarId=cal, body=body).execute()
+    if e.description:
+        body["description"] = e.description
+    e.event_id = svc.events().insert(calendarId=cal, body=body).execute().get("id", "")
 
 
 def commit_plan(date: dt.date, events: list[Event]) -> None:
@@ -324,6 +329,11 @@ def set_bucket(event_id: str, bucket: str, which: str = "actual") -> None:
     if color:
         body["colorId"] = color
     _service().events().patch(calendarId=_cal_id(which), eventId=event_id, body=body).execute()
+
+
+def set_description(event_id: str, text: str, which: str = "actual") -> None:
+    """Fill one event's description (the notes box in the calendar), e.g. what a recorded segment was spent on."""
+    _service().events().patch(calendarId=_cal_id(which), eventId=event_id, body={"description": text}).execute()
 
 
 def summary(date: dt.date | None = None, which: str = "plan", color: bool | None = None) -> str:

@@ -18,6 +18,9 @@ its menu switches buckets / stops / brings the bar back.
 Auto-stop (core/running.autostop_reason): a main/side/fun segment ends by itself when the computer sleeps
 (ended at the last tick before the gap), sits idle 20 min (ended when input stopped), or the bar was gone
 (ended at its last heartbeat). Life/health keep running — you're away from the computer for those.
+After a segment of 5+ min ends (■, a switch, or an auto-stop), a "干了啥？" box shows up in the bar: Enter writes the
+text into that calendar event's description (core/running.describe), Esc skips. If the bar was tucked it pops out for
+the question and tucks back after.
 Works on macOS and Windows (PySide6, `pip install -e '.[softbar]'`).
 """
 
@@ -27,7 +30,7 @@ import datetime as dt
 import sys
 
 from PySide6.QtCore import QPoint, QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QPalette, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLayout, QLineEdit, QMenu,
                                QPushButton, QSystemTrayIcon, QWidget)
 
@@ -124,6 +127,17 @@ class SoftBar(QWidget):
         for w in (self.no_btn, self.yes_btn):   # inserted at the same index → ends up yes, no
             w.hide()
             row.insertWidget(row.indexOf(self.msg) + 1, w)
+
+        # "干了啥？" after a segment ends: Enter → the event's description, Esc → skip
+        self.done = QLineEdit()
+        self.done.setStyleSheet("background:rgba(246,191,38,0.16); border:1px solid #f6bf26;")
+        self.done.returnPressed.connect(self._save_done)
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self.done, self._skip_done,
+                  context=Qt.ShortcutContext.WidgetShortcut)
+        self.done.hide()
+        row.insertWidget(row.indexOf(self.msg) + 1, self.done)
+        self._done_for: list = []          # the events (one segment, maybe split at midnight) being asked about
+        self._done_retuck = False          # the bar was tucked away before it popped out to ask
 
         self._style_buttons()
         self._last_tick = running._now()
@@ -238,8 +252,61 @@ class SoftBar(QWidget):
         text = f"{why}，已在 {e.end:%H:%M} 自动结束「{e.summary}」"
         self.flash(text)
         self._style_buttons()
+        asked = self._ask_done(written, focus=False)   # you're away: the question waits for you
         if getattr(self, "tray", None):
-            self.tray.showMessage("TimePlanner", text, QSystemTrayIcon.MessageIcon.Information, 8000)
+            self.tray.showMessage("TimePlanner", text + ("，回来在浮动条写一下干了啥" if asked else ""),
+                                  QSystemTrayIcon.MessageIcon.Information, 8000)
+
+    # ---- "干了啥？" after a segment ends ----
+
+    def _ask_done(self, written, focus: bool = True) -> bool:
+        """Show the 干了啥 box for the segment that just ended (a newer one replaces an unanswered question)."""
+        if not running.worth_asking(written):
+            return False
+        self._done_for = list(written)
+        first, last = written[0], written[-1]
+        span = running._fmt(last.end - first.start)
+        prompt = f"刚才「{first.summary}」{span} 干了啥？回车写进日历 · Esc 跳过"
+        self.done.clear()
+        self.done.setPlaceholderText(prompt)
+        self.done.setMinimumWidth(min(self.done.fontMetrics().horizontalAdvance(prompt) + 28, 520))
+        self.done.setToolTip(f"{first.start:%H:%M}–{last.end:%H:%M} {first.summary}")
+        if not self.isVisible():                    # tucked into the menu bar → pop out just for the question
+            self._done_retuck = True
+            self._place()
+            self.show()
+            _mac_pin(self, self._on_top)
+        self.done.show()
+        if focus:
+            self.activateWindow()
+            self.done.setFocus()
+        self.adjustSize()
+        return True
+
+    def _save_done(self) -> None:
+        text = self.done.text().strip()
+        if not text:
+            return self._skip_done()
+        try:
+            running.describe(self._done_for, text)
+        except Exception as e:  # noqa: BLE001 — e.g. GCal offline: keep the text so Enter can retry
+            self.flash(f"没写进去：{e}")
+            return
+        self.flash(f"📝 已写进「{self._done_for[-1].summary}」")
+        self._close_done()
+
+    def _skip_done(self) -> None:
+        self._close_done()
+
+    def _close_done(self) -> None:
+        self._done_for = []
+        self.done.clear()
+        self.done.hide()
+        self.adjustSize()
+        if self._done_retuck:
+            self._done_retuck = False
+            if getattr(self, "tray", None) and self._settings.value("tucked", False, type=bool):
+                QTimer.singleShot(1500, self.hide)   # let the "已写进" flash be seen, then tuck back
 
     def _render_running(self) -> None:
         r = running.current()
@@ -295,6 +362,7 @@ class SoftBar(QWidget):
         self.flash(f"{done}开始 {BUCKET_LABEL[bucket]}")
         self._style_buttons()
         self._render_running()
+        self._ask_done(written)
         self.adjustSize()
 
     def stop(self) -> None:
@@ -307,6 +375,7 @@ class SoftBar(QWidget):
         self.flash(f"已记 {written[-1].summary}" if written else "当前没有在记录")
         self._style_buttons()
         self._render_running()
+        self._ask_done(written)
 
     def _ask_wind_down(self) -> None:
         _set(self.msg, "先收尾 12 分钟？写 next action + 收拾桌面")

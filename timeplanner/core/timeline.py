@@ -44,13 +44,16 @@ def _save_rows(which: str, rows: list[dict]) -> None:
 
 
 def _row(e: Event) -> dict:
-    return {
+    row = {
         "id": e.event_id or uuid.uuid4().hex[:8],
         "summary": e.summary,
         "start": e.start.isoformat(),
         "end": e.end.isoformat(),
         "bucket": norm_bucket(e.bucket),
     }
+    if e.description:
+        row["description"] = e.description
+    return row
 
 
 def _event(r: dict) -> Event:
@@ -60,6 +63,7 @@ def _event(r: dict) -> Event:
         end=dt.datetime.fromisoformat(r["end"]),
         bucket=r.get("bucket", ""),
         event_id=r.get("id", ""),
+        description=r.get("description", ""),
         external=False,  # local timeline is all planner-written; external constraints only appear once GCal is merged in
     )
 
@@ -146,9 +150,21 @@ def commit_plan(date: dt.date, events: list[Event]) -> None:
 
 
 def append_actual(event: Event) -> None:
+    """Append one Actual; event.event_id is set to its local id (like gcal.append_actual)."""
     rows = _load_rows(ACTUAL)
-    rows.append(_row(event))
+    row = _row(event)
+    event.event_id = row["id"]
+    rows.append(row)
     _save_rows(ACTUAL, rows)
+
+
+def set_description(event_id: str, text: str, which: str = ACTUAL) -> None:
+    """Fill one logged event's description (what the segment was spent on)."""
+    rows = _load_rows(which)
+    for r in rows:
+        if r.get("id") == event_id:
+            r["description"] = text
+    _save_rows(which, rows)
 
 
 def set_bucket(event_id: str, bucket: str, which: str = ACTUAL) -> None:

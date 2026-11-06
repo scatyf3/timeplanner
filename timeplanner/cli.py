@@ -239,7 +239,9 @@ def cmd_rec(args) -> int:
         return 0
     if what == "stop":
         written = running.stop()
-        print("\n".join(f"⏹ 已记 {e.line()}" for e in written) or "（当前没有在记录）")
+        running.describe(written, " ".join(args.summary or []))   # `rec stop 干了啥` → the event's notes
+        print("\n".join(f"⏹ 已记 {e.line()}" + (f"\n   📝 {e.description}" if e.description else "")
+                        for e in written) or "（当前没有在记录）")
         return 0
     note = running.work_on_off_day(what)
     if note:
@@ -363,9 +365,9 @@ def main(argv: list[str] | None = None) -> int:
     sb = sub.add_parser("softbar", help="屏幕浮动条：一键切 bucket 软记录时间（需 PySide6）")
     sb.add_argument("--install", action="store_true", help="装成 app + 登录自启（macOS / Windows）")
     sb.add_argument("--uninstall", action="store_true", help="移除 --install 装的 app 和自启项")
-    rv = sub.add_parser("rec", help="命令行软记录：rec <bucket> [描述] 开始/切换 · rec stop · rec status")
+    rv = sub.add_parser("rec", help="命令行软记录：rec <bucket> [描述] 开始/切换 · rec stop [干了啥] · rec status")
     rv.add_argument("what", choices=["main", "side", "life", "health", "fun", "stop", "status"])
-    rv.add_argument("summary", nargs="*", help="在干嘛（可选）")
+    rv.add_argument("summary", nargs="*", help="在干嘛（可选）；rec stop 后面跟的是干了啥，写进日历事件的描述")
 
     rc = sub.add_parser("reclassify", help="按描述重判 bucket、给记过的 Actual 事件重新上色")
     rc.add_argument("--date", help="YYYY-MM-DD，默认今天")

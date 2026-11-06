@@ -62,6 +62,11 @@ def log_actual(date: dt.date, start: str, end: str, bucket: str, summary_text: s
     return e
 
 
+def set_description(event_id: str, text: str, which: str = "actual") -> None:
+    """Write text into one event's description (calendar notes box) in the current backend."""
+    _m().set_description(event_id, text, which)
+
+
 def reclassify(date: dt.date | None = None, dry_run: bool = True) -> str:
     """Re-bucket our own logged Actual events by keyword-classifying their summary. Never touches external
     (hand-made Time record) events. dry_run only previews the color changes; otherwise patches them."""
